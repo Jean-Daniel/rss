@@ -1,0 +1,177 @@
+/* Fever's look: light gray page, gray list rows, dark selected row, red accent. */
+:root {
+	--page: #e9e9e9;
+	--page-top: #f6f6f6;
+	--text: #333;
+	--text-muted: #666;
+	--text-faint: #888;
+	--accent: #a10;
+	--accent-strong: #b02418;
+
+	--row: #f1f1f1;
+	--row-hover: #e4e4e4;
+	--row-line: #dcdcdc;
+	--row-selected: #404040;
+	--row-selected-text: #fff;
+	--surface: #fff;
+	--shadow: 0 1px 2px rgb(0 0 0 / 0.18), 0 0 0 1px rgb(0 0 0 / 0.04);
+
+	--radius: 5px;
+	--row-height: 32px;
+	--gap: 20px;
+	--sidebar-w: 220px;
+	--feeds-w: 260px;
+
+	--font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+
+	color-scheme: light;
+}
+
+@media (pointer: coarse) {
+	:root {
+		--row-height: 44px; /* comfortable touch targets */
+	}
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+
+body {
+	margin: 0;
+	min-height: 100dvh;
+	background: linear-gradient(var(--page-top), var(--page) 320px) fixed var(--page);
+	color: var(--text);
+	font: 14px/1.45 var(--font);
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+}
+
+a {
+	color: inherit;
+	font-weight: bold;
+	text-decoration: none;
+}
+
+a:hover {
+	color: var(--accent);
+}
+
+button {
+	font: inherit;
+	color: inherit;
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent-strong);
+	outline-offset: 1px;
+}
+
+.visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* A raised group of rows, like Fever's lists. */
+.box {
+	background: var(--row);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+	overflow: hidden;
+}
+
+/* Rows of a list (sections, groups, feeds). */
+.rows {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.rows a {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: var(--row-height);
+	padding: 0 10px;
+	border-bottom: 1px solid var(--row-line);
+	box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7);
+	color: var(--text);
+	white-space: nowrap;
+}
+
+.rows li:last-child > a {
+	border-bottom: 0;
+}
+
+.rows a:hover {
+	background: var(--row-hover);
+	color: var(--text);
+}
+
+.rows a[aria-current='page'] {
+	background: var(--row-selected);
+	color: var(--row-selected-text);
+	box-shadow: none;
+}
+
+/* Feeds and groups with nothing unread read lighter, as in Fever. */
+.rows a.read {
+	font-weight: normal;
+	color: var(--text-muted);
+}
+
+.rows a.read[aria-current='page'] {
+	color: var(--row-selected-text);
+}
+
+.rows .label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.rows .count {
+	font-weight: normal;
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-faint);
+}
+
+.rows a[aria-current='page'] .count {
+	color: rgb(255 255 255 / 0.75);
+}
+
+.icon-button {
+	display: inline-grid;
+	place-items: center;
+	min-width: var(--row-height);
+	height: var(--row-height);
+	padding: 0 8px;
+	border: 0;
+	border-radius: var(--radius);
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.icon-button:hover {
+	background: var(--row-hover);
+	color: var(--text);
+}
+
+.icon-button svg {
+	width: 18px;
+	height: 18px;
+}

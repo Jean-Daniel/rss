@@ -1,0 +1,51 @@
+# Quadlet unit for Fever v2.
+#
+# Install as ~/.config/containers/systemd/fever-v2.container (rootless) or
+# /etc/containers/systemd/fever-v2.container (rootful), then:
+#   systemctl --user daemon-reload && systemctl --user start fever-v2
+#
+# Before the first start, create the database secret (see README.md):
+#   printf '%s' 'postgres://USER:PASSWORD@POSTGRES_CONTAINER:5432/rss' | podman secret create fever-v2-database-url -
+
+[Unit]
+Description=Fever v2 RSS reader
+Wants=network-online.target
+After=network-online.target
+# Start after PostgreSQL. Replace with the name of your Postgres unit.
+# After=postgres.service
+# Wants=postgres.service
+
+[Container]
+ContainerName=fever-v2
+Image=localhost/fever-v2:latest
+# The quadlet network shared with the PostgreSQL container.
+# Replace with your own .network file name.
+Network=postgres.network
+# Only nginx on this host reaches the app.
+PublishPort=127.0.0.1:3000:8080
+
+Secret=fever-v2-database-url,type=env,target=DATABASE_URL
+Environment=PUBLIC_ORIGIN=https://rss.example.com
+Environment=TRUST_PROXY=true
+Environment=GOMEMLIMIT=48MiB
+
+# Hard memory cap; the server idles around 15-20 MB.
+PodmanArgs=--memory=128m
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+
+# JSON form: the image has no shell to run a plain command string.
+HealthCmd=["/fever","healthcheck"]
+HealthInterval=2m
+HealthStartPeriod=20s
+
+# `podman auto-update` restarts the unit when a newer local image is built.
+AutoUpdate=local
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,5 @@
+packages:
+  - path: fever/internal/apitypes
+    output_path: web/src/lib/api/types.ts
+    # Go pointers are sent as JSON null, not left out.
+    optional_type: "null"

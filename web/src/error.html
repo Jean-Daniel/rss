@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Error · Fever</title>
+		<style>
+			body {
+				display: grid;
+				place-items: center;
+				min-height: 100vh;
+				margin: 0;
+				background: #e9e9e9;
+				color: #333;
+				font:
+					14px/1.45 'Helvetica Neue',
+					Helvetica,
+					Arial,
+					sans-serif;
+				text-align: center;
+			}
+			.card {
+				max-width: 380px;
+				padding: 28px 24px;
+				border-radius: 5px;
+				background: #fff;
+				box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+			}
+			button {
+				height: 40px;
+				padding: 0 20px;
+				border: 0;
+				border-radius: 4px;
+				background: #404040;
+				color: #fff;
+				font: inherit;
+				font-weight: bold;
+				cursor: pointer;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="card">
+			<h1>Something went wrong (%sveltekit.status%)</h1>
+			<p>%sveltekit.error.message%</p>
+			<button type="button" onclick="location.reload()">Try again</button>
+		</div>
+	</body>
+</html>

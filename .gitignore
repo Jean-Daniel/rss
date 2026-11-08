@@ -1,0 +1,5 @@
+# Local settings (database URL, etc.)
+.env
+
+# Binaries built with `make build-bin`
+/bin/

@@ -1,0 +1,27 @@
+#!/bin/sh
+# Runs npm inside a Node container, so Node never has to be installed on this
+# machine. Use it like npm: ./npm install, ./npm run check, ./npm run build.
+#
+# node_modules lives in the podman volume "fever-web-node-modules", not in
+# this folder. Set NPM_PUBLISH_PORT (e.g. 127.0.0.1:5173:5173) to expose the
+# Vite dev server; `make web-dev` does that for you.
+set -eu
+cd "$(dirname "$0")"
+
+tty=""
+if [ -t 0 ] && [ -t 1 ]; then tty="-t"; fi
+
+# File change events do not cross into the podman VM on macOS, so the dev
+# server polls there instead.
+poll=""
+if [ "$(uname -s)" = "Darwin" ]; then poll="1"; fi
+
+exec podman run --rm -i $tty \
+	-v "$PWD:/app:z" \
+	-v fever-web-node-modules:/app/node_modules \
+	-w /app \
+	-e npm_config_update_notifier=false \
+	-e VITE_POLL="${VITE_POLL:-$poll}" \
+	-e API_URL="${API_URL:-http://host.containers.internal:8080}" \
+	${NPM_PUBLISH_PORT:+-p "$NPM_PUBLISH_PORT"} \
+	docker.io/library/node:26-slim npm "$@"

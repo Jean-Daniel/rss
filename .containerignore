@@ -1,0 +1,9 @@
+.env
+.git
+web/node_modules
+web/build
+web/.svelte-kit
+dev
+deploy
+tools
+*.md
