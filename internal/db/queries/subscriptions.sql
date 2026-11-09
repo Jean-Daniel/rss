@@ -1,5 +1,5 @@
 -- name: ListGroups :many
-SELECT id, title, show_unread_count
+SELECT id, title, show_unread_count, show_images, oldest_first
 FROM groups
 ORDER BY lower(title), id;
 
@@ -9,13 +9,14 @@ ORDER BY lower(title), id;
 -- save the sidebar a query.
 -- name: ListFeeds :many
 SELECT f.id, f.display_title, f.url, f.site_url, f.favicon_id, f.show_unread_count, f.last_error,
-       f.last_fetched_at, f.last_new_item_at,
+       f.last_fetched_at, f.last_new_item_at, f.show_images, f.oldest_first,
        coalesce(u.unread, 0)::bigint AS unread,
        coalesce(g.group_ids, '{}')::bigint[] AS group_ids,
        (SELECT count(*) FROM items WHERE saved_at IS NOT NULL)::bigint AS saved_count,
        coalesce(max(f.last_fetched_at) OVER (), 'epoch')::timestamptz AS last_refreshed_at -- epoch: never
 FROM (
     SELECT id, url, site_url, favicon_id, show_unread_count, last_error, last_fetched_at, last_new_item_at,
+           show_images, oldest_first,
            coalesce(nullif(title, ''),
                     regexp_replace(url, '^[a-zA-Z][a-zA-Z0-9+.-]*://([^/?#@]*@)?([^/?#]+).*$', '\2'))::text AS display_title
     FROM feeds

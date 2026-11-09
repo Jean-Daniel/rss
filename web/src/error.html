@@ -26,16 +26,14 @@
 				background: #fff;
 				box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
 			}
-			button {
-				height: 40px;
-				padding: 0 20px;
-				border: 0;
+			.button {
+				display: inline-block;
+				padding: 10px 20px;
 				border-radius: 4px;
 				background: #404040;
 				color: #fff;
-				font: inherit;
 				font-weight: bold;
-				cursor: pointer;
+				text-decoration: none;
 			}
 		</style>
 	</head>
@@ -43,7 +41,8 @@
 		<div class="card">
 			<h1>Something went wrong (%sveltekit.status%)</h1>
 			<p>%sveltekit.error.message%</p>
-			<button type="button" onclick="location.reload()">Try again</button>
+			<!-- A link, not a script: the page's Content Security Policy blocks inline handlers. -->
+			<a class="button" href="">Try again</a>
 		</div>
 	</body>
 </html>

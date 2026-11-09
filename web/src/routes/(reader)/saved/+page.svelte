@@ -1,5 +1,10 @@
 <script lang="ts">
-	import EmptyStream from '#lib/components/EmptyStream.svelte';
+	import Stream from '#lib/components/Stream.svelte';
+	import type { PageProps } from './$types';
+
+	let { data }: PageProps = $props();
 </script>
 
-<EmptyStream />
+{#key data.stream}
+	<Stream stream={data.stream} subs={data.subscriptions} />
+{/key}

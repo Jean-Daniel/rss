@@ -63,6 +63,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/subscriptions", s.requireAuth(s.getSubscriptions))
 	mux.Handle("GET /api/favicons/{id}", s.requireAuth(s.getFavicon))
 	mux.Handle("POST /api/refresh", s.requireAuth(s.refresh))
+	mux.Handle("GET /api/items", s.requireAuth(s.listItems))
+	mux.Handle("POST /api/items/state", s.requireAuth(s.setItemState))
+	mux.Handle("POST /api/items/read-all", s.requireAuth(s.markAllRead))
+	mux.Handle("GET /api/items/changes", s.requireAuth(s.itemChanges))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Unknown API endpoint.")
 	})

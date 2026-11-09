@@ -29,13 +29,14 @@ func (q *Queries) GetFavicon(ctx context.Context, id int64) (GetFaviconRow, erro
 
 const listFeeds = `-- name: ListFeeds :many
 SELECT f.id, f.display_title, f.url, f.site_url, f.favicon_id, f.show_unread_count, f.last_error,
-       f.last_fetched_at, f.last_new_item_at,
+       f.last_fetched_at, f.last_new_item_at, f.show_images, f.oldest_first,
        coalesce(u.unread, 0)::bigint AS unread,
        coalesce(g.group_ids, '{}')::bigint[] AS group_ids,
        (SELECT count(*) FROM items WHERE saved_at IS NOT NULL)::bigint AS saved_count,
        coalesce(max(f.last_fetched_at) OVER (), 'epoch')::timestamptz AS last_refreshed_at -- epoch: never
 FROM (
     SELECT id, url, site_url, favicon_id, show_unread_count, last_error, last_fetched_at, last_new_item_at,
+           show_images, oldest_first,
            coalesce(nullif(title, ''),
                     regexp_replace(url, '^[a-zA-Z][a-zA-Z0-9+.-]*://([^/?#@]*@)?([^/?#]+).*$', '\2'))::text AS display_title
     FROM feeds
@@ -64,6 +65,8 @@ type ListFeedsRow struct {
 	LastError       *string
 	LastFetchedAt   *time.Time
 	LastNewItemAt   *time.Time
+	ShowImages      *bool
+	OldestFirst     *bool
 	Unread          int64
 	GroupIds        []int64
 	SavedCount      int64
@@ -93,6 +96,8 @@ func (q *Queries) ListFeeds(ctx context.Context) ([]ListFeedsRow, error) {
 			&i.LastError,
 			&i.LastFetchedAt,
 			&i.LastNewItemAt,
+			&i.ShowImages,
+			&i.OldestFirst,
 			&i.Unread,
 			&i.GroupIds,
 			&i.SavedCount,
@@ -109,7 +114,7 @@ func (q *Queries) ListFeeds(ctx context.Context) ([]ListFeedsRow, error) {
 }
 
 const listGroups = `-- name: ListGroups :many
-SELECT id, title, show_unread_count
+SELECT id, title, show_unread_count, show_images, oldest_first
 FROM groups
 ORDER BY lower(title), id
 `
@@ -118,6 +123,8 @@ type ListGroupsRow struct {
 	ID              int64
 	Title           string
 	ShowUnreadCount *bool
+	ShowImages      *bool
+	OldestFirst     *bool
 }
 
 func (q *Queries) ListGroups(ctx context.Context) ([]ListGroupsRow, error) {
@@ -129,7 +136,13 @@ func (q *Queries) ListGroups(ctx context.Context) ([]ListGroupsRow, error) {
 	var items []ListGroupsRow
 	for rows.Next() {
 		var i ListGroupsRow
-		if err := rows.Scan(&i.ID, &i.Title, &i.ShowUnreadCount); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.ShowUnreadCount,
+			&i.ShowImages,
+			&i.OldestFirst,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

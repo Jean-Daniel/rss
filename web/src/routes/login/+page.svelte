@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, ApiError } from '#lib/api/client.ts';
+	import { itemState } from '#lib/item-state.svelte.ts';
 	import { safeNext } from '#lib/navigation.ts';
 	import type { PageProps } from './$types';
 
@@ -17,6 +18,8 @@
 		error = '';
 		try {
 			await api('/api/session', { method: 'POST', body: JSON.stringify({ password }) });
+			// Reads kept while the session had ended can be sent now.
+			itemState.sendSoon();
 			// Back to the page that asked for the login, if any.
 			await goto(safeNext(page.url.searchParams.get('next')), { refreshAll: true });
 		} catch (err) {

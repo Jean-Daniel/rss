@@ -1,16 +1,10 @@
 <script lang="ts">
-	import EmptyStream from '#lib/components/EmptyStream.svelte';
+	import Stream from '#lib/components/Stream.svelte';
 	import type { PageProps } from './$types';
 
-	let { data, params }: PageProps = $props();
-
-	const group = $derived(data.subscriptions.groups.find((g) => g.id === Number(params.id)));
+	let { data }: PageProps = $props();
 </script>
 
-{#if group}
-	<EmptyStream />
-{:else}
-	<EmptyStream>
-		<p>This group does not exist any more. <a href="/">Back to all items</a></p>
-	</EmptyStream>
-{/if}
+{#key data.stream}
+	<Stream stream={data.stream} subs={data.subscriptions} />
+{/key}

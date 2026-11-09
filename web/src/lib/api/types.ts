@@ -51,6 +51,24 @@ export interface Subscriptions {
 	 * nothing new for that long is marked stale.
 	 */
 	retentionWeeks: number /* int */;
+	/**
+	 * Defaults are the reading preferences used where a feed or group does
+	 * not set its own.
+	 */
+	defaults: Defaults;
+}
+export interface Defaults {
+	oldestFirst: boolean;
+	showImages: boolean;
+	/**
+	 * ShowRead lists read items too, not only unread ones.
+	 */
+	showRead: boolean;
+	/**
+	 * AutoRead marks items read as they scroll out of view.
+	 */
+	autoRead: boolean;
+	pageSize: number /* int */;
 }
 /**
  * RefreshRequest is the optional body of POST /api/refresh. Without a feed,
@@ -65,9 +83,11 @@ export interface Group {
 	unread: number /* int64 */;
 	feedIds: number /* int64 */[];
 	/**
-	 * ShowUnreadCount is null when the global preference applies.
+	 * Display options; null when the global preference applies.
 	 */
 	showUnreadCount: boolean | null;
+	showImages: boolean | null;
+	oldestFirst: boolean | null;
 }
 export interface Feed {
 	id: number /* int64 */;
@@ -77,7 +97,12 @@ export interface Feed {
 	faviconId: number /* int64 */ | null;
 	unread: number /* int64 */;
 	groupIds: number /* int64 */[];
+	/**
+	 * Display options; null when the group's or the global one applies.
+	 */
 	showUnreadCount: boolean | null;
+	showImages: boolean | null;
+	oldestFirst: boolean | null;
 	/**
 	 * Error is the last fetch problem, if any.
 	 */
@@ -92,4 +117,68 @@ export interface Feed {
 	 * period (only once it has been fetched).
 	 */
 	stale: boolean;
+}
+/**
+ * Item is an entry in an item list. Content is sanitized HTML.
+ */
+export interface Item {
+	id: number /* int64 */;
+	feedId: number /* int64 */;
+	title: string;
+	url: string;
+	author: string;
+	publishedAt: string;
+	read: boolean;
+	saved: boolean;
+	content: string;
+}
+/**
+ * ItemPage answers GET /api/items.
+ */
+export interface ItemPage {
+	items: Item[];
+	/**
+	 * Next is the cursor of the following page (the `after` parameter), or
+	 * null at the end of the list.
+	 */
+	next: string | null;
+	/**
+	 * LoadedAt is the server time of the request: the `before` of "mark all
+	 * as read", and the `since` for GET /api/items/changes.
+	 */
+	loadedAt: string;
+}
+/**
+ * ItemStateRequest is the body of POST /api/items/state. Read and Saved are
+ * applied when not null.
+ */
+export interface ItemStateRequest {
+	ids: number /* int64 */[];
+	read: boolean | null;
+	saved: boolean | null;
+}
+/**
+ * MarkAllReadRequest is the body of POST /api/items/read-all. Scope is
+ * "all", "group" or "feed" (with ID); only items that had arrived at Before
+ * are marked.
+ */
+export interface MarkAllReadRequest {
+	scope: string;
+	id: number /* int64 */ | null;
+	before: string;
+}
+/**
+ * ItemChanges answers GET /api/items/changes?since=…: read and saved states
+ * changed since then, on any device. When Next is set more changes follow:
+ * ask again with after=Next. LoadedAt is the `since` of the next sync.
+ */
+export interface ItemChanges {
+	changes: ItemChange[];
+	next: string | null;
+	loadedAt: string;
+}
+export interface ItemChange {
+	id: number /* int64 */;
+	read: boolean;
+	saved: boolean;
 }

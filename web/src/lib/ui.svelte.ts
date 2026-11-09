@@ -2,11 +2,12 @@ import { MediaQuery } from 'svelte/reactivity';
 
 const FEEDS_KEY = 'fever.feedsVisible';
 
+// Hidden unless shown on this device, as in the old Fever setup.
 function readFeedsVisible(): boolean {
 	try {
-		return localStorage.getItem(FEEDS_KEY) !== '0';
+		return localStorage.getItem(FEEDS_KEY) === '1';
 	} catch {
-		return true;
+		return false;
 	}
 }
 

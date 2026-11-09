@@ -18,3 +18,15 @@ export function formatDate(iso: string): string {
 		year: 'numeric'
 	});
 }
+
+/** Recent times as "5 min ago", older ones as a date ("3 Sep", or "3 Sep 2024"). */
+export function when(iso: string, now: number): string {
+	const t = Date.parse(iso);
+	if (now - t < 24 * 3600_000) return ago(iso, now);
+	const sameYear = new Date(t).getFullYear() === new Date(now).getFullYear();
+	return new Date(t).toLocaleDateString(undefined, {
+		day: 'numeric',
+		month: 'short',
+		year: sameYear ? undefined : 'numeric'
+	});
+}

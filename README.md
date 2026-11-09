@@ -11,9 +11,9 @@ and mobile, and read state is stored in PostgreSQL.
 - **Database:** PostgreSQL. v2 tables live in their own `reader` schema, so they can
   sit next to the old `fever_*` tables in the same database.
 
-Status: steps 1 and 2 are done: schema, login, the importer for the old data, the page
-layout, and feed refreshing. The item list (reading, mark as read on scroll) comes
-next.
+Status: steps 1 to 3 are done: schema, login, the importer for the old data, the page
+layout, feed refreshing, and reading (item lists, mark as read on scroll, saving).
+Next: mobile polish and the installed app, then feed and preference management.
 
 ## Configuration
 
@@ -72,6 +72,25 @@ modified" answer. The refresh button in the sidebar makes every feed due at once
 - **Safety:** feeds cannot point the server at loopback or private addresses (such as
   the database container) unless `FETCH_ALLOW_PRIVATE=true`. Downloads are size
   limited (8 MB per feed, 256 KB per icon) and time limited.
+
+## Reading
+
+Lists show unread items, oldest first, full articles with images, 20 at a time, as
+the old Fever setup did; "All" shows read items too (remembered per device). Saved
+items are listed newest first.
+
+- **Mark as read on scroll:** an item is marked read once its bottom edge goes above
+  the top of the window (below the top bar on phones), after it has been on screen.
+  Opening an article also marks it read; an item marked unread by hand stays unread.
+  The end of a list leaves a screen of room so the last items can scroll past too.
+- **No lost reads:** changes are kept in the browser's storage and sent in batches
+  every 2 seconds, and right away when the page is hidden or closed; anything not
+  confirmed is sent again later.
+- **Other devices:** read and saved changes made elsewhere are picked up when the app
+  comes back to the foreground, and every 5 minutes.
+- **Mark all as read** only covers items that had arrived when the list was shown.
+- Feed HTML is sanitized on the server, and a Content Security Policy blocks any
+  script that is not the app's own.
 
 ## Development
 

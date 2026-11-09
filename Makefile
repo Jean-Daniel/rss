@@ -32,7 +32,7 @@ dev:
 
 test:
 	go vet ./...
-	go test ./...
+	go test -p 1 ./...  # one package at a time: the database tests share TEST_DATABASE_URL
 
 generate:
 	$(GO_TOOL) sqlc generate

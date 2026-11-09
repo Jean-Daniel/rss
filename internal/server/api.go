@@ -80,6 +80,7 @@ func (s *Server) getSubscriptions(w http.ResponseWriter, r *http.Request) {
 	feedsOfGroup := make(map[int64][]int64)
 	res.Refreshing = s.refresher.Busy()
 	res.RetentionWeeks = int(feeds.Retention / (7 * 24 * time.Hour))
+	res.Defaults = readingDefaults
 	now := time.Now()
 	for _, f := range subscribed {
 		res.SavedCount = f.SavedCount     // the same on every row
@@ -101,6 +102,8 @@ func (s *Server) getSubscriptions(w http.ResponseWriter, r *http.Request) {
 			Unread:          f.Unread,
 			GroupIDs:        f.GroupIds,
 			ShowUnreadCount: f.ShowUnreadCount,
+			ShowImages:      f.ShowImages,
+			OldestFirst:     f.OldestFirst,
 			Error:           f.LastError,
 			LastUpdatedAt:   f.LastNewItemAt,
 			Stale:           isStale(f.LastFetchedAt, f.LastNewItemAt, now),
@@ -121,6 +124,8 @@ func (s *Server) getSubscriptions(w http.ResponseWriter, r *http.Request) {
 			Unread:          n,
 			FeedIDs:         fids,
 			ShowUnreadCount: g.ShowUnreadCount,
+			ShowImages:      g.ShowImages,
+			OldestFirst:     g.OldestFirst,
 		})
 	}
 	writeJSON(w, http.StatusOK, res)

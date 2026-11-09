@@ -1,8 +1,10 @@
 <script lang="ts">
-	import { afterNavigate, goto, invalidate } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api } from '#lib/api/client.ts';
 	import FeedList from '#lib/components/FeedList.svelte';
+	import { clock, onResume } from '#lib/foreground.svelte.ts';
+	import { itemState, withLocalCounts } from '#lib/item-state.svelte.ts';
 	import SourceList from '#lib/components/SourceList.svelte';
 	import { contextGroup, selectionFrom, selectionTitle, unreadOf } from '#lib/selection.ts';
 	import { ago } from '#lib/time.ts';
@@ -11,7 +13,8 @@
 
 	let { data, children }: LayoutProps = $props();
 
-	const subs = $derived(data.subscriptions);
+	// Counts include reads made here that the server has not reported back yet.
+	const subs = $derived(withLocalCounts(data.subscriptions, itemState.counts));
 	const selection = $derived(
 		selectionFrom(page.route.id, page.params, page.url.searchParams, subs)
 	);
@@ -38,7 +41,7 @@
 		refreshError = '';
 		try {
 			await api('/api/refresh', { method: 'POST' });
-			await invalidate('app:subscriptions');
+			await itemState.reloadCounts();
 		} catch (err) {
 			refreshError = err instanceof Error ? err.message : String(err);
 		} finally {
@@ -48,31 +51,12 @@
 
 	$effect(() => {
 		if (!subs.refreshing) return;
-		const timer = setTimeout(() => invalidate('app:subscriptions'), 2000);
+		const timer = setTimeout(() => itemState.reloadCounts(), 2000);
 		return () => clearTimeout(timer);
 	});
 
-	// Keep counts current, including reads made on another device: reload
-	// when the app comes back to the foreground, and every 5 minutes.
-	let loadedAt = Date.now();
-	let now = $state(Date.now());
-	$effect.pre(() => {
-		void subs;
-		loadedAt = Date.now();
-	});
-	$effect(() => {
-		const reloadIfOlder = (age: number) => {
-			now = Date.now();
-			if (!document.hidden && now - loadedAt > age) invalidate('app:subscriptions');
-		};
-		const tick = setInterval(() => reloadIfOlder(5 * 60_000), 30_000);
-		const onVisibility = () => reloadIfOlder(60_000);
-		document.addEventListener('visibilitychange', onVisibility);
-		return () => {
-			clearInterval(tick);
-			document.removeEventListener('visibilitychange', onVisibility);
-		};
-	});
+	// Keep counts current, including reads made on another device.
+	$effect(() => onResume(() => itemState.reloadCounts()));
 
 	async function logout() {
 		try {
@@ -152,7 +136,7 @@
 					{#if refreshing}
 						refreshing…
 					{:else if subs.lastRefreshedAt}
-						refreshed {ago(subs.lastRefreshedAt, now)}
+						refreshed {ago(subs.lastRefreshedAt, clock.now)}
 					{:else}
 						never refreshed
 					{/if}

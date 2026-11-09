@@ -17,7 +17,26 @@ export default defineConfig({
 			// A single-page app: the Go server embeds the build and answers every
 			// route that is not a file with index.html. Brotli and gzip copies are
 			// made at build time so the server never compresses on the fly.
-			adapter: adapter({ fallback: 'index.html', precompress: true })
+			adapter: adapter({ fallback: 'index.html', precompress: true }),
+			// Feed HTML is sanitized on the server; this policy is a second line
+			// of defense: no script but the app's own (its inline bootstrap is
+			// allowed by hash), no plugins, no frames. Images may come from any
+			// site, as feed articles embed them.
+			csp: {
+				mode: 'hash',
+				directives: {
+					'default-src': ['self'],
+					'script-src': ['self'],
+					'style-src': ['self', 'unsafe-inline'],
+					'img-src': ['self', 'data:', 'https:', 'http:'],
+					'connect-src': ['self'],
+					'font-src': ['self'],
+					'object-src': ['none'],
+					'frame-src': ['none'],
+					'base-uri': ['self'],
+					'form-action': ['self']
+				}
+			}
 		})
 	],
 	server: {
