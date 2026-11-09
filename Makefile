@@ -9,7 +9,7 @@ DEV_DB_PORT := 55432
 IMAGE       := localhost/fever-v2:latest
 GO_TOOL     := go tool -modfile=tools/go.mod
 
-.PHONY: help dev web-dev web-install web-check web-build generate test build build-bin \
+.PHONY: help dev web-dev web-install web-check web-build generate test browser-test build build-bin \
         dev-db dev-db-stop dev-sample dev-import dev-import-sample dev-password
 
 help:
@@ -23,6 +23,7 @@ help:
 	@echo "make web-check     type-check the front end"
 	@echo "make generate      regenerate sqlc queries and TypeScript API types"
 	@echo "make test          run the Go tests"
+	@echo "make browser-test  check the installed app in a headless Chromium (containers)"
 	@echo "make build         build the container image $(IMAGE)"
 
 # --- Go server ---------------------------------------------------------------
@@ -33,6 +34,10 @@ dev:
 test:
 	go vet ./...
 	go test -p 1 ./...  # one package at a time: the database tests share TEST_DATABASE_URL
+
+# Service worker, install and phone gestures, in throwaway containers.
+browser-test:
+	dev/browsertest/run.sh
 
 generate:
 	$(GO_TOOL) sqlc generate

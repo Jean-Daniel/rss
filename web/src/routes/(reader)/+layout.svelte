@@ -4,9 +4,11 @@
 	import { api } from '#lib/api/client.ts';
 	import FeedList from '#lib/components/FeedList.svelte';
 	import { clock, onResume } from '#lib/foreground.svelte.ts';
+	import { install } from '#lib/install.svelte.ts';
 	import { itemState, withLocalCounts } from '#lib/item-state.svelte.ts';
 	import SourceList from '#lib/components/SourceList.svelte';
 	import { contextGroup, selectionFrom, selectionTitle, unreadOf } from '#lib/selection.ts';
+	import { swipeToClose } from '#lib/swipe.ts';
 	import { ago } from '#lib/time.ts';
 	import { phone, ui, wide } from '#lib/ui.svelte.ts';
 	import type { LayoutProps } from './$types';
@@ -71,6 +73,12 @@
 	function onkeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') ui.closePanels();
 	}
+
+	// The phone's title bar, tapped: back to the first item.
+	function scrollToTop() {
+		const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+		window.scrollTo({ top: 0, behavior: reduce ? 'instant' : 'smooth' });
+	}
 </script>
 
 <svelte:head>
@@ -109,7 +117,9 @@
 		>
 			<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M2 4h14M2 9h14M2 14h14" /></svg>
 		</button>
-		<h1 class="topbar-title">{title}</h1>
+		<h1 class="topbar-title">
+			<button onclick={scrollToTop} title="Back to the top">{title}</button>
+		</h1>
 		{#if unread > 0}<span class="topbar-count">{unread}</span>{/if}
 		{@render refreshButton()}
 	</header>
@@ -117,7 +127,11 @@
 	<button class="backdrop" tabindex="-1" aria-label="Close" onclick={() => ui.closePanels()}
 	></button>
 
-	<div class="panels" inert={phone.current && !ui.drawerOpen}>
+	<div
+		class="panels"
+		inert={phone.current && !ui.drawerOpen}
+		{@attach phone.current && swipeToClose(() => (ui.drawerOpen = false))}
+	>
 		<div class="sidebar">
 			<div class="brand">
 				<a href="/" class="logo" aria-label="Fever, all items">fever<span>°</span></a>
@@ -144,6 +158,14 @@
 				</p>
 			</div>
 			{#if refreshError}<p class="status-error" role="alert">{refreshError}</p>{/if}
+			{#if install.available}
+				<button class="icon-button labeled install" onclick={() => install.prompt()}>
+					<svg viewBox="0 0 18 18" aria-hidden="true">
+						<path d="M9 2.5v9M5 8l4 4 4-4M3 15.5h12" />
+					</svg>
+					<span>Install app</span>
+				</button>
+			{/if}
 		</div>
 
 		<div class="feeds">
@@ -156,7 +178,7 @@
 			<h1>{title}</h1>
 			{#if unread > 0}<span class="unread">{unread} unread</span>{/if}
 			<button
-				class="icon-button feeds-toggle"
+				class="icon-button labeled feeds-toggle"
 				onclick={() => ui.toggleFeeds()}
 				aria-pressed={wide.current ? ui.feedsVisible : ui.feedsOverlay}
 				title="Show or hide the feed list"
@@ -243,6 +265,10 @@
 		color: var(--accent);
 	}
 
+	.install {
+		font-size: 12px;
+	}
+
 	.refresh:disabled {
 		cursor: default;
 	}
@@ -291,8 +317,6 @@
 	}
 
 	.feeds-toggle {
-		display: inline-flex;
-		gap: 6px;
 		margin-left: auto;
 	}
 
@@ -372,9 +396,21 @@
 			min-width: 0;
 			margin: 0;
 			font-size: 17px;
+		}
+
+		.topbar-title button {
+			display: block;
+			width: 100%;
+			min-height: 44px;
+			padding: 0 4px;
+			border: 0;
+			background: none;
+			font-weight: inherit;
+			text-align: left;
 			overflow: hidden;
 			text-overflow: ellipsis;
 			white-space: nowrap;
+			cursor: pointer;
 		}
 
 		.topbar-count {
@@ -403,6 +439,7 @@
 			background: var(--page);
 			transform: translateX(-102%);
 			transition: transform 0.2s ease;
+			touch-action: pan-y; /* horizontal moves close it (swipeToClose) */
 		}
 
 		.drawer-open .panels {

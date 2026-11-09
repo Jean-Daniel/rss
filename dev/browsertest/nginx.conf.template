@@ -1,0 +1,13 @@
+# Production in miniature: nginx in front of the app, so a stopped app answers
+# "502 Bad Gateway" as it would on the server. The upstream is looked up on
+# every request (podman's DNS), so stopping and starting the app works.
+server {
+    listen 8080;
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=1s ipv6=off;
+    set $app http://fever.test:8080;
+
+    location / {
+        proxy_pass $app;
+        proxy_set_header Host $http_host;
+    }
+}

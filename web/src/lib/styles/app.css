@@ -69,6 +69,14 @@ button {
 	color: inherit;
 }
 
+/* No double-tap zoom on controls, so taps register at once. */
+a,
+button,
+label,
+summary {
+	touch-action: manipulation;
+}
+
 :focus-visible {
 	outline: 2px solid var(--accent-strong);
 	outline-offset: 1px;
@@ -114,9 +122,17 @@ button {
 	border-bottom: 0;
 }
 
-.rows a:hover {
+.rows a:hover,
+.rows a:active {
 	background: var(--row-hover);
 	color: var(--text);
+}
+
+/* Rows and icon buttons show their own pressed state (:active) instead of
+   the browser's tap flash. Other controls keep the flash. */
+.rows a,
+.icon-button {
+	-webkit-tap-highlight-color: transparent;
 }
 
 .rows a[aria-current='page'] {
@@ -166,7 +182,8 @@ button {
 	cursor: pointer;
 }
 
-.icon-button:hover {
+.icon-button:hover,
+.icon-button:active {
 	background: var(--row-hover);
 	color: var(--text);
 }
@@ -174,4 +191,11 @@ button {
 .icon-button svg {
 	width: 18px;
 	height: 18px;
+}
+
+/* An icon button with a text label after the icon. */
+.icon-button.labeled {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 }

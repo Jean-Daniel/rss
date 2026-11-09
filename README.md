@@ -11,9 +11,9 @@ and mobile, and read state is stored in PostgreSQL.
 - **Database:** PostgreSQL. v2 tables live in their own `reader` schema, so they can
   sit next to the old `fever_*` tables in the same database.
 
-Status: steps 1 to 3 are done: schema, login, the importer for the old data, the page
-layout, feed refreshing, and reading (item lists, mark as read on scroll, saving).
-Next: mobile polish and the installed app, then feed and preference management.
+Status: steps 1 to 4 are done: schema, login, the importer for the old data, the page
+layout, feed refreshing, reading (item lists, mark as read on scroll, saving), and
+the phone and installed-app polish. Next: feed and preference management.
 
 ## Configuration
 
@@ -92,6 +92,31 @@ items are listed newest first.
 - Feed HTML is sanitized on the server, and a Content Security Policy blocks any
   script that is not the app's own.
 
+## Phones and the installed app
+
+On narrow screens the groups and feeds are in a drawer: open it with the menu button,
+close it with a swipe to the left, a tap outside it, or Escape. Tapping the title
+bar goes back to the top of the list.
+
+Fever can be installed as an app (it needs HTTPS):
+- **iPhone and iPad (Safari):** Share → Add to Home Screen.
+- **Android, and Chrome or Edge on a computer:** the "Install app" button under the
+  feed count in the sidebar (in the drawer on phones), or the browser's install menu.
+- **Safari on a Mac:** File → Add to Dock.
+
+A service worker keeps the app's own files on the device, so the app starts without
+downloading them; a page load waits at most 3 seconds for the server before using
+that copy. Articles, read state and counts always come from the server: without a
+connection, with the server down (nginx answering "502 Bad Gateway"), or when it
+does not answer within 10 seconds, the app opens and says the server cannot be
+reached.
+
+**Updates:** when a new version is deployed, the app picks it up in the background
+and shows "A new version of Fever is available" with a Reload button, so you are
+never interrupted mid-article. Reads made before the reload are kept and sent. The
+previous version's files stay cached until the next update, so an app still open
+on the old version keeps working.
+
 ## Development
 
 Go runs on your machine. Node only runs in a container: `web/npm` is a drop-in `npm`
@@ -126,6 +151,13 @@ database to include the end-to-end refresh test, which wipes the v2 tables there
 service worker types), `make generate` (regenerates `internal/store` from the SQL in
 `internal/db/queries` with sqlc, and `web/src/lib/api/types.ts` from
 `internal/apitypes` with tygo). sqlc and tygo are pinned in `tools/go.mod`.
+
+`make browser-test` checks what only a browser can: the service worker (offline
+start, server down behind nginx, slow server, updates), installability, the install
+button and the phone gestures. It builds two versions of the app and runs them with
+nginx, the fake dataset and a headless Chromium in throwaway podman containers,
+removed afterwards. The checks are in `dev/browsertest` (a separate Go module, so
+the server does not depend on chromedp).
 
 ## Deployment (podman quadlet behind nginx)
 

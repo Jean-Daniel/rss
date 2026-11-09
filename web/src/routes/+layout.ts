@@ -9,10 +9,18 @@ import type { LayoutLoad } from './$types';
 export const ssr = false;
 export const prerender = false;
 
+// Nothing shows until the session is known, so a network that does not
+// answer (weak signal) ends in "cannot be reached" and Try again.
+const SESSION_TIMEOUT = 10_000;
+
 export const load: LayoutLoad = async ({ fetch, url, untrack }) => {
 	let session: Session;
 	try {
-		session = await api<Session>('/api/session', {}, fetch);
+		session = await api<Session>(
+			'/api/session',
+			{ signal: AbortSignal.timeout(SESSION_TIMEOUT) },
+			fetch
+		);
 	} catch (err) {
 		// Offline, or the server is restarting. This load must not throw:
 		// SvelteKit would then replace the whole app with its bare static

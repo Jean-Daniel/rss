@@ -40,7 +40,9 @@ export async function api<T>(
 		try {
 			message = ((await res.json()) as ErrorResponse).error || message;
 		} catch {
-			// not a JSON error body (e.g. a proxy error page)
+			// Not the server's JSON: a proxy's error page. 502-504 from the
+			// proxy (nginx) mean the server itself is down or not answering.
+			if (res.status >= 502 && res.status <= 504) throw new ApiError(0, UNREACHABLE);
 		}
 		throw new ApiError(res.status, message);
 	}
