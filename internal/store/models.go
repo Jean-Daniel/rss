@@ -14,6 +14,12 @@ type Device struct {
 	LastSeenAt time.Time
 }
 
+type ExpiredItem struct {
+	FeedID    int64
+	Guid      string
+	ExpiredAt time.Time
+}
+
 type Favicon struct {
 	ID        int64
 	Url       string
@@ -23,25 +29,26 @@ type Favicon struct {
 }
 
 type Feed struct {
-	ID              int64
-	Url             string
-	Title           string
-	SiteUrl         string
-	FaviconID       *int64
-	AuthUsername    *string
-	AuthPassword    *string
-	ShowExcerpts    *bool
-	ShowImages      *bool
-	OldestFirst     *bool
-	ShowUnreadCount *bool
-	Etag            *string
-	LastModified    *string
-	LastFetchedAt   *time.Time
-	LastNewItemAt   *time.Time
-	NextFetchAt     time.Time
-	ErrorCount      int32
-	LastError       *string
-	CreatedAt       time.Time
+	ID               int64
+	Url              string
+	Title            string
+	SiteUrl          string
+	FaviconID        *int64
+	AuthUsername     *string
+	AuthPassword     *string
+	ShowExcerpts     *bool
+	ShowImages       *bool
+	OldestFirst      *bool
+	ShowUnreadCount  *bool
+	Etag             *string
+	LastModified     *string
+	LastFetchedAt    *time.Time
+	LastNewItemAt    *time.Time
+	NextFetchAt      time.Time
+	ErrorCount       int32
+	LastError        *string
+	CreatedAt        time.Time
+	FaviconCheckedAt *time.Time
 }
 
 type FeedGroup struct {

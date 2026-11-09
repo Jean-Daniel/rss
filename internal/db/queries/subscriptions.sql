@@ -5,14 +5,17 @@ ORDER BY lower(title), id;
 
 -- ListFeeds returns every feed with its unread count and groups, plus the
 -- title to show (the site's host when the feed has none), sorted by that
--- title. saved_count, the same on every row, saves the sidebar a query.
+-- title. saved_count and last_refreshed_at are the same on every row; they
+-- save the sidebar a query.
 -- name: ListFeeds :many
 SELECT f.id, f.display_title, f.url, f.site_url, f.favicon_id, f.show_unread_count, f.last_error,
+       f.last_fetched_at, f.last_new_item_at,
        coalesce(u.unread, 0)::bigint AS unread,
        coalesce(g.group_ids, '{}')::bigint[] AS group_ids,
-       (SELECT count(*) FROM items WHERE saved_at IS NOT NULL)::bigint AS saved_count
+       (SELECT count(*) FROM items WHERE saved_at IS NOT NULL)::bigint AS saved_count,
+       coalesce(max(f.last_fetched_at) OVER (), 'epoch')::timestamptz AS last_refreshed_at -- epoch: never
 FROM (
-    SELECT id, url, site_url, favicon_id, show_unread_count, last_error,
+    SELECT id, url, site_url, favicon_id, show_unread_count, last_error, last_fetched_at, last_new_item_at,
            coalesce(nullif(title, ''),
                     regexp_replace(url, '^[a-zA-Z][a-zA-Z0-9+.-]*://([^/?#@]*@)?([^/?#]+).*$', '\2'))::text AS display_title
     FROM feeds

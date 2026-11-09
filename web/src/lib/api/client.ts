@@ -44,7 +44,8 @@ export async function api<T>(
 		}
 		throw new ApiError(res.status, message);
 	}
-	if (res.status === 204) return undefined as T;
+	// 202/204 and other answers without a JSON body carry no data.
+	if (!res.headers.get('Content-Type')?.startsWith('application/json')) return undefined as T;
 	return (await res.json()) as T;
 }
 

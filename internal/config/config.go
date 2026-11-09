@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -26,6 +27,13 @@ type Config struct {
 	TrustProxy bool
 	// DBMaxConns caps the PostgreSQL connection pool (DB_MAX_CONNS, default 4).
 	DBMaxConns int32
+	// RefreshInterval is how often each feed is fetched (REFRESH_INTERVAL,
+	// a Go duration such as "15m", default 15 minutes, at least 5 minutes).
+	RefreshInterval time.Duration
+	// FetchAllowPrivate lets feeds live on loopback or private addresses
+	// (FETCH_ALLOW_PRIVATE). Off by default, so feeds cannot reach the
+	// database or other services on the server's internal network.
+	FetchAllowPrivate bool
 }
 
 func Load() (Config, error) {
@@ -34,6 +42,8 @@ func Load() (Config, error) {
 		ListenAddr:   envOr("LISTEN_ADDR", ":8080"),
 		PublicOrigin: strings.TrimRight(os.Getenv("PUBLIC_ORIGIN"), "/"),
 		DBMaxConns:   4,
+
+		RefreshInterval: 15 * time.Minute,
 	}
 
 	if c.PublicOrigin != "" {
@@ -51,6 +61,22 @@ func Load() (Config, error) {
 			return c, fmt.Errorf("TRUST_PROXY: %w", err)
 		}
 		c.TrustProxy = b
+	}
+
+	if v := os.Getenv("REFRESH_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 5*time.Minute {
+			return c, fmt.Errorf("REFRESH_INTERVAL must be a duration of at least 5m, got %q", v)
+		}
+		c.RefreshInterval = d
+	}
+
+	if v := os.Getenv("FETCH_ALLOW_PRIVATE"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return c, fmt.Errorf("FETCH_ALLOW_PRIVATE: %w", err)
+		}
+		c.FetchAllowPrivate = b
 	}
 
 	if v := os.Getenv("DB_MAX_CONNS"); v != "" {

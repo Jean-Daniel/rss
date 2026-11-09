@@ -4,15 +4,16 @@ A rewrite of this personal Fever RSS reader. There is one user. It works on desk
 and mobile, and read state is stored in PostgreSQL.
 
 - **Server:** Go (`cmd/fever`, `internal/…`). It is a single binary that serves the
-  JSON API and the front end and applies database migrations. It will also refresh
-  feeds once step 2 is built.
+  JSON API and the front end, refreshes feeds in the background and applies database
+  migrations.
 - **Front end:** SvelteKit 3 (`web/`), built as static files and embedded in the
   binary.
 - **Database:** PostgreSQL. v2 tables live in their own `reader` schema, so they can
   sit next to the old `fever_*` tables in the same database.
 
-Status: step 1 (skeleton) is done: schema, login, the importer for the old data, and
-the page layout. Feed fetching and the item list come next.
+Status: steps 1 and 2 are done: schema, login, the importer for the old data, the page
+layout, and feed refreshing. The item list (reading, mark as read on scroll) comes
+next.
 
 ## Configuration
 
@@ -25,6 +26,8 @@ Everything is set with environment variables:
 | `PUBLIC_ORIGIN` | empty    | Public URL, e.g. `https://rss.example.com`. Only this origin may make changes, and `https` turns on Secure cookies. |
 | `TRUST_PROXY`   | `false`  | Read the client IP and scheme from `X-Forwarded-*`. Set it behind nginx only. |
 | `DB_MAX_CONNS`  | `4`      | Maximum number of PostgreSQL connections |
+| `REFRESH_INTERVAL` | `15m` | How often each feed is fetched (at least `5m`) |
+| `FETCH_ALLOW_PRIVATE` | `false` | Allow feeds on loopback or private addresses (your LAN, other containers) |
 | `GOMEMLIMIT`    | `48MiB` in the image | Go runtime memory target |
 
 ## Commands
@@ -48,6 +51,27 @@ What the import changes:
   removed, and relative links and images are made absolute.
 - Fever's "unfiltered" display option becomes "text with images".
 - Hot, Sparks and the links table are not imported, because v2 does not have them.
+
+## Feed refreshing
+
+Every minute the server fetches the feeds that are due, four at a time, then
+schedules each one again `REFRESH_INTERVAL` later (with a little random spread). It
+sends the feed's `ETag`/`Last-Modified` back, so unchanged feeds cost a short "not
+modified" answer. The refresh button in the sidebar makes every feed due at once.
+
+- **Failures:** a failing feed is retried after 30 minutes, then 1, 2, 4… hours, up to
+  a day, or later if the site sends `Retry-After`. The message is shown on the feed.
+- **Retention:** like Fever, items are kept for 10 weeks unless saved, and expired
+  items are deleted every hour. Older entries that a feed still lists are not added
+  again: the server remembers the IDs of expired items for as long as their feed
+  lists them, which also covers entries without a date.
+- **Failed saves:** if new items cannot be stored, the feed is marked as failed and
+  keeps its previous `ETag`, so the next attempt downloads it again.
+- **Favicons:** for feeds without one, the server looks at the site's home page for
+  icon links, then `/favicon.ico`, at most once a week per feed.
+- **Safety:** feeds cannot point the server at loopback or private addresses (such as
+  the database container) unless `FETCH_ALLOW_PRIVATE=true`. Downloads are size
+  limited (8 MB per feed, 256 KB per icon) and time limited.
 
 ## Development
 
@@ -78,7 +102,8 @@ podman exec -i fever-dev-db psql -U rss -d rss < fever.sql
 make dev-import
 ```
 
-Other tasks: `make test` (Go vet and tests), `make web-check` (svelte-check and
+Other tasks: `make test` (Go vet and tests; set `TEST_DATABASE_URL` to a scratch
+database to include the end-to-end refresh test, which wipes the v2 tables there), `make web-check` (svelte-check and
 service worker types), `make generate` (regenerates `internal/store` from the SQL in
 `internal/db/queries` with sqlc, and `web/src/lib/api/types.ts` from
 `internal/apitypes` with tygo). sqlc and tygo are pinned in `tools/go.mod`.

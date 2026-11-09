@@ -7,12 +7,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
+	"fever/internal/content"
 	"fever/internal/store"
 )
 
@@ -94,7 +93,7 @@ func (s *Sessions) Login(ctx context.Context, w http.ResponseWriter, r *http.Req
 	err = s.q.CreateSession(ctx, store.CreateSessionParams{
 		TokenHash: tokenHash,
 		ExpiresAt: expires,
-		UserAgent: truncateUTF8(r.UserAgent(), 255),
+		UserAgent: content.TruncateUTF8(r.UserAgent(), 255),
 	})
 	if err != nil {
 		return err
@@ -193,19 +192,6 @@ func newToken() (token string, tokenHash []byte, err error) {
 	}
 	token = base64.RawURLEncoding.EncodeToString(b)
 	return token, hashToken(token), nil
-}
-
-// truncateUTF8 returns valid UTF-8 of at most max bytes, without splitting a
-// character (PostgreSQL rejects invalid UTF-8 in text columns).
-func truncateUTF8(v string, max int) string {
-	v = strings.ToValidUTF8(v, "")
-	if len(v) <= max {
-		return v
-	}
-	for max > 0 && !utf8.RuneStart(v[max]) {
-		max--
-	}
-	return v[:max]
 }
 
 func hashToken(token string) []byte {

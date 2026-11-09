@@ -11,9 +11,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"html"
+	"hash/crc32"
 	"log/slog"
-	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"fever/internal/content"
+	"fever/internal/feeds"
 )
 
 type Options struct {
@@ -91,7 +92,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger, opts Options
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `TRUNCATE items, feed_groups, feeds, groups, favicons`); err != nil {
+	if _, err := tx.Exec(ctx, `TRUNCATE items, expired_items, feed_groups, feeds, groups, favicons`); err != nil {
 		return st, err
 	}
 
@@ -136,7 +137,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger, opts Options
 				return nil, err
 			}
 			st.Groups++
-			return []any{id, html.UnescapeString(title), flag(excerpts), imagesFlag(allows), flag(sortOrder), flag(unread)}, nil
+			return []any{id, content.Text(title, 500), flag(excerpts), imagesFlag(allows), flag(sortOrder), flag(unread)}, nil
 		})
 	if err != nil {
 		return st, fmt.Errorf("groups: %w", err)
@@ -171,7 +172,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger, opts Options
 				lastError = &msg
 			}
 			st.Feeds++
-			return []any{id, url, html.UnescapeString(title), siteURL, favicon, user, pass,
+			return []any{id, feeds.NormalizeURL(url), content.Text(title, 500), siteURL, favicon, user, pass,
 				flag(excerpts), imagesFlag(allows), flag(sortOrder), flag(unread),
 				unixOrNil(refreshedOn), unixOrNil(addedOn), lastError}, nil
 		})
@@ -198,22 +199,23 @@ func Run(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger, opts Options
 		return st, fmt.Errorf("feed groups: %w", err)
 	}
 
-	// Items. Items without a uid fall back to their link; duplicates of the
-	// same uid within a feed are collapsed, keeping a saved copy if any.
+	// Items. Items without a uid fall back to their link; duplicates within a
+	// feed (same guid once Fever's checksums are converted) are collapsed.
+	// Rows come saved first within each feed, so a saved copy always wins.
 	// Fever has no "saved on" date, so the item's arrival time is used.
 	started := time.Now()
+	seen := make(map[string]bool) // feed id + guid, after feverGUID
 	err = copyRows(ctx, src, tx, "items",
 		[]string{"id", "feed_id", "guid", "url", "title", "author", "content",
 			"published_at", "added_at", "read_at", "saved_at", "state_changed_at"},
-		`SELECT DISTINCT ON (i.feed_id, guid)
-		        i.id::bigint, i.feed_id::bigint,
+		`SELECT i.id::bigint, i.feed_id::bigint,
 		        coalesce(nullif(i.uid::text, ''), nullif(i.link::text, ''), 'fever:' || i.id) AS guid,
 		        coalesce(i.link, '')::text, coalesce(i.title, '')::text, coalesce(i.author, '')::text,
 		        coalesce(i.description, '')::text, coalesce(f.site_url, '')::text,
 		        i.created_on_time::bigint, i.added_on_time::bigint, i.read_on_time::bigint, i.is_saved::int
 		 FROM `+table("items")+` i
 		 JOIN `+table("feeds")+` f ON f.id = i.feed_id
-		 ORDER BY i.feed_id, guid, i.is_saved::int DESC, i.id`,
+		 ORDER BY i.feed_id, i.is_saved::int DESC, i.id`,
 		func(rows pgx.Rows) ([]any, error) {
 			var id, feedID, createdOn, addedOn, readOn int64
 			var guid, link, title, author, description, siteURL string
@@ -222,6 +224,12 @@ func Run(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger, opts Options
 				&createdOn, &addedOn, &readOn, &saved); err != nil {
 				return nil, err
 			}
+			guid = feverGUID(guid, link)
+			key := strconv.FormatInt(feedID, 10) + "\x00" + guid
+			if seen[key] {
+				return nil, nil
+			}
+			seen[key] = true
 			base := link
 			if base == "" {
 				base = siteURL
@@ -244,7 +252,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger, opts Options
 			if st.Items%5000 == 0 {
 				log.Info("importing items", "done", st.Items, "elapsed", time.Since(started).Round(time.Second))
 			}
-			return []any{id, feedID, guid, link, html.UnescapeString(title), html.UnescapeString(author),
+			return []any{id, feedID, guid, link, content.Text(title, 1000), content.Text(author, 200),
 				content.Clean(description, base), published, added, readAt, savedAt, changed}, nil
 		})
 	if err != nil {
@@ -358,7 +366,7 @@ func decodeFavicon(cache string) (mime string, data []byte, ok bool) {
 	if err != nil || len(data) == 0 {
 		return "", nil, false
 	}
-	mime = sniffImage(data)
+	mime = content.SniffImage(data)
 	if mime == "" && strings.HasPrefix(declared, "image/") && declared != "image/svg+xml" {
 		mime = declared // e.g. a format the sniffer does not know
 	}
@@ -368,15 +376,14 @@ func decodeFavicon(cache string) (mime string, data []byte, ok bool) {
 	return mime, data, true
 }
 
-func sniffImage(data []byte) string {
-	if t := http.DetectContentType(data); strings.HasPrefix(t, "image/") {
-		return t
+// feverGUID maps Fever's item uid to the guid v2 computes for the same entry.
+// For entries without a guid, Fever stored a CRC-32 of the link where v2
+// uses the link itself.
+func feverGUID(uid, link string) string {
+	if link != "" && uid == strconv.FormatUint(uint64(crc32.ChecksumIEEE([]byte(link))), 10) {
+		return content.TruncateUTF8(link, 255)
 	}
-	head := strings.ToLower(string(data[:min(len(data), 1024)]))
-	if strings.Contains(head, "<svg") {
-		return "image/svg+xml"
-	}
-	return ""
+	return uid
 }
 
 func decodeAuth(auth string) (user, pass *string) {

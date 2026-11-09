@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"fever/internal/apitypes"
 	"fever/internal/auth"
+	"fever/internal/feeds"
 )
 
 func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +66,7 @@ func (s *Server) getSubscriptions(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	feeds, err := s.q.ListFeeds(ctx)
+	subscribed, err := s.q.ListFeeds(ctx)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -72,12 +74,19 @@ func (s *Server) getSubscriptions(w http.ResponseWriter, r *http.Request) {
 
 	res := apitypes.Subscriptions{
 		Groups: make([]apitypes.Group, 0, len(groups)),
-		Feeds:  make([]apitypes.Feed, 0, len(feeds)),
+		Feeds:  make([]apitypes.Feed, 0, len(subscribed)),
 	}
-	unread := make(map[int64]int64, len(feeds))
+	unread := make(map[int64]int64, len(subscribed))
 	feedsOfGroup := make(map[int64][]int64)
-	for _, f := range feeds {
-		res.SavedCount = f.SavedCount // the same on every row
+	res.Refreshing = s.refresher.Busy()
+	res.RetentionWeeks = int(feeds.Retention / (7 * 24 * time.Hour))
+	now := time.Now()
+	for _, f := range subscribed {
+		res.SavedCount = f.SavedCount     // the same on every row
+		if f.LastRefreshedAt.Unix() > 0 { // epoch means never
+			t := f.LastRefreshedAt
+			res.LastRefreshedAt = &t
+		}
 		res.TotalUnread += f.Unread
 		unread[f.ID] = f.Unread
 		for _, gid := range f.GroupIds {
@@ -93,6 +102,8 @@ func (s *Server) getSubscriptions(w http.ResponseWriter, r *http.Request) {
 			GroupIDs:        f.GroupIds,
 			ShowUnreadCount: f.ShowUnreadCount,
 			Error:           f.LastError,
+			LastUpdatedAt:   f.LastNewItemAt,
+			Stale:           isStale(f.LastFetchedAt, f.LastNewItemAt, now),
 		})
 	}
 	for _, g := range groups {
@@ -113,6 +124,39 @@ func (s *Server) getSubscriptions(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// isStale reports whether a feed that has been fetched at least once has
+// brought no new item for the retention period.
+func isStale(lastFetched, lastNewItem *time.Time, now time.Time) bool {
+	if lastFetched == nil {
+		return false // not fetched yet: nothing to judge
+	}
+	return lastNewItem == nil || lastNewItem.Before(now.Add(-feeds.Retention))
+}
+
+// refresh starts fetching every feed, or one feed, right away. The client
+// follows progress through the refreshing flag of GET /api/subscriptions.
+func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
+	var req apitypes.RefreshRequest
+	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.FeedID != nil {
+		found, err := s.refresher.RefreshFeed(r.Context(), *req.FeedID)
+		if err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		if !found {
+			writeError(w, http.StatusNotFound, "Unknown feed.")
+			return
+		}
+	} else if err := s.refresher.RefreshAll(r.Context()); err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (s *Server) getFavicon(w http.ResponseWriter, r *http.Request) {

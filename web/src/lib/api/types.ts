@@ -38,6 +38,26 @@ export interface Subscriptions {
 	feeds: Feed[];
 	totalUnread: number /* int64 */;
 	savedCount: number /* int64 */;
+	/**
+	 * LastRefreshedAt is when a feed was last fetched (RFC 3339), or null.
+	 */
+	lastRefreshedAt: string | null;
+	/**
+	 * Refreshing is true while feeds are being fetched.
+	 */
+	refreshing: boolean;
+	/**
+	 * RetentionWeeks is how long items are kept unless saved; a feed with
+	 * nothing new for that long is marked stale.
+	 */
+	retentionWeeks: number /* int */;
+}
+/**
+ * RefreshRequest is the optional body of POST /api/refresh. Without a feed,
+ * every feed is refreshed.
+ */
+export interface RefreshRequest {
+	feedId: number /* int64 */ | null;
 }
 export interface Group {
 	id: number /* int64 */;
@@ -62,4 +82,14 @@ export interface Feed {
 	 * Error is the last fetch problem, if any.
 	 */
 	error: string | null;
+	/**
+	 * LastUpdatedAt is when the feed last brought new items (RFC 3339), or
+	 * null if it never did.
+	 */
+	lastUpdatedAt: string | null;
+	/**
+	 * Stale is true when the feed has brought nothing new for the retention
+	 * period (only once it has been fetched).
+	 */
+	stale: boolean;
 }

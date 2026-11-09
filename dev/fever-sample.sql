@@ -95,5 +95,9 @@ INSERT INTO fever_items (id, feed_id, uid, title, author, description, link, rea
     (4, 2, NULL, '&#8230;', NULL, '<div style="color:red" onclick="steal()">No uid, falls back to link</div>', 'https://news.example.org/a', 0, 0, 1729996000, 1729996100),
     (5, 2, NULL, 'No uid, no link', NULL, '<a href="javascript:alert(1)">bad</a>', NULL, 0, 0, 0, 1729997000),
     (6, 3, 'p-1', 'Private item', NULL, 'Text only', 'https://private.example.net/1', 0, 0, 1729998000, 1729998100),
-    (7, 99, 'orphan', 'Item of a deleted feed', NULL, '', '', 0, 0, 1729999000, 1729999100);
-SELECT setval('fever_items_id_seq', 7);
+    (7, 99, 'orphan', 'Item of a deleted feed', NULL, '', '', 0, 0, 1729999000, 1729999100),
+    -- The same entry twice: first stored with Fever's checksum of the link as
+    -- its uid, later with the link itself, and saved. The saved copy must win.
+    (8, 1, '884332246', 'Third post', '', '<p>old copy</p>', 'https://example.com/2024/third', 1730002000, 0, 1729996000, 1729996100),
+    (9, 1, 'https://example.com/2024/third', 'Third post', '', '<p>saved copy</p>', 'https://example.com/2024/third', 0, 1, 1729996000, 1729996200);
+SELECT setval('fever_items_id_seq', 9);

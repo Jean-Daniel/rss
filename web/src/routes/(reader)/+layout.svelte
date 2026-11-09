@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { afterNavigate, goto } from '$app/navigation';
+	import { afterNavigate, goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api } from '#lib/api/client.ts';
 	import FeedList from '#lib/components/FeedList.svelte';
 	import SourceList from '#lib/components/SourceList.svelte';
 	import { contextGroup, selectionFrom, selectionTitle, unreadOf } from '#lib/selection.ts';
+	import { ago } from '#lib/time.ts';
 	import { phone, ui, wide } from '#lib/ui.svelte.ts';
 	import type { LayoutProps } from './$types';
 
@@ -21,7 +22,57 @@
 	const title = $derived(selectionTitle(selection));
 	const unread = $derived(unreadOf(selection, subs));
 
+	const failing = $derived(subs.feeds.filter((f) => f.error !== null).length);
+
 	afterNavigate(() => ui.closePanels());
+
+	// Refreshing: POST starts it on the server; the subscriptions are then
+	// reloaded every 2 seconds until the server says it is done.
+	let starting = $state(false);
+	let refreshError = $state('');
+	const refreshing = $derived(starting || subs.refreshing);
+
+	async function refreshAll() {
+		if (refreshing) return;
+		starting = true;
+		refreshError = '';
+		try {
+			await api('/api/refresh', { method: 'POST' });
+			await invalidate('app:subscriptions');
+		} catch (err) {
+			refreshError = err instanceof Error ? err.message : String(err);
+		} finally {
+			starting = false;
+		}
+	}
+
+	$effect(() => {
+		if (!subs.refreshing) return;
+		const timer = setTimeout(() => invalidate('app:subscriptions'), 2000);
+		return () => clearTimeout(timer);
+	});
+
+	// Keep counts current, including reads made on another device: reload
+	// when the app comes back to the foreground, and every 5 minutes.
+	let loadedAt = Date.now();
+	let now = $state(Date.now());
+	$effect.pre(() => {
+		void subs;
+		loadedAt = Date.now();
+	});
+	$effect(() => {
+		const reloadIfOlder = (age: number) => {
+			now = Date.now();
+			if (!document.hidden && now - loadedAt > age) invalidate('app:subscriptions');
+		};
+		const tick = setInterval(() => reloadIfOlder(5 * 60_000), 30_000);
+		const onVisibility = () => reloadIfOlder(60_000);
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => {
+			clearInterval(tick);
+			document.removeEventListener('visibilitychange', onVisibility);
+		};
+	});
 
 	async function logout() {
 		try {
@@ -44,6 +95,21 @@
 
 <svelte:window {onkeydown} />
 
+{#snippet refreshButton()}
+	<button
+		class="icon-button refresh"
+		class:spinning={refreshing}
+		onclick={refreshAll}
+		disabled={refreshing}
+		title="Refresh all feeds"
+		aria-label="Refresh all feeds"
+	>
+		<svg viewBox="0 0 18 18" aria-hidden="true">
+			<path d="M15 9a6 6 0 1 1-1.76-4.24M15 2.5v3.5h-3.5" />
+		</svg>
+	</button>
+{/snippet}
+
 <div
 	class="shell"
 	class:feeds-visible={ui.feedsVisible}
@@ -61,6 +127,7 @@
 		</button>
 		<h1 class="topbar-title">{title}</h1>
 		{#if unread > 0}<span class="topbar-count">{unread}</span>{/if}
+		{@render refreshButton()}
 	</header>
 
 	<button class="backdrop" tabindex="-1" aria-label="Close" onclick={() => ui.closePanels()}
@@ -77,11 +144,26 @@
 				</button>
 			</div>
 			<SourceList {subs} {selection} />
-			<p class="status">{subs.feeds.length} {subs.feeds.length === 1 ? 'feed' : 'feeds'}</p>
+			<div class="status">
+				{@render refreshButton()}
+				<p>
+					{subs.feeds.length}
+					{subs.feeds.length === 1 ? 'feed' : 'feeds'} ·
+					{#if refreshing}
+						refreshing…
+					{:else if subs.lastRefreshedAt}
+						refreshed {ago(subs.lastRefreshedAt, now)}
+					{:else}
+						never refreshed
+					{/if}
+					{#if failing > 0}<br /><span class="failing">{failing} with problems</span>{/if}
+				</p>
+			</div>
+			{#if refreshError}<p class="status-error" role="alert">{refreshError}</p>{/if}
 		</div>
 
 		<div class="feeds">
-			<FeedList {feeds} {group} {selection} />
+			<FeedList {feeds} {group} {selection} retentionWeeks={subs.retentionWeeks} />
 		</div>
 	</div>
 
@@ -155,9 +237,40 @@
 	}
 
 	.status {
-		margin: 12px 4px;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		margin: 10px 0;
 		font-size: 12px;
 		color: var(--text-faint);
+	}
+
+	.status p {
+		margin: 0;
+	}
+
+	.failing {
+		color: #a26731;
+	}
+
+	.status-error {
+		margin: 0 4px;
+		font-size: 12px;
+		color: var(--accent);
+	}
+
+	.refresh:disabled {
+		cursor: default;
+	}
+
+	.refresh.spinning svg {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.icon-button svg {
@@ -334,6 +447,11 @@
 	@media (prefers-reduced-motion: reduce) {
 		.panels {
 			transition: none;
+		}
+
+		.refresh.spinning svg {
+			animation: none;
+			opacity: 0.5;
 		}
 	}
 </style>

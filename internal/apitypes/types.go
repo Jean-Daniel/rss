@@ -2,6 +2,8 @@
 // TypeScript types are generated from this file (make generate).
 package apitypes
 
+import "time"
+
 // ErrorResponse is the body of every non-2xx JSON response.
 type ErrorResponse struct {
 	Error string `json:"error"`
@@ -26,6 +28,19 @@ type Subscriptions struct {
 	Feeds       []Feed  `json:"feeds"`
 	TotalUnread int64   `json:"totalUnread"`
 	SavedCount  int64   `json:"savedCount"`
+	// LastRefreshedAt is when a feed was last fetched (RFC 3339), or null.
+	LastRefreshedAt *time.Time `json:"lastRefreshedAt"`
+	// Refreshing is true while feeds are being fetched.
+	Refreshing bool `json:"refreshing"`
+	// RetentionWeeks is how long items are kept unless saved; a feed with
+	// nothing new for that long is marked stale.
+	RetentionWeeks int `json:"retentionWeeks"`
+}
+
+// RefreshRequest is the optional body of POST /api/refresh. Without a feed,
+// every feed is refreshed.
+type RefreshRequest struct {
+	FeedID *int64 `json:"feedId"`
 }
 
 type Group struct {
@@ -48,4 +63,10 @@ type Feed struct {
 	ShowUnreadCount *bool   `json:"showUnreadCount"`
 	// Error is the last fetch problem, if any.
 	Error *string `json:"error"`
+	// LastUpdatedAt is when the feed last brought new items (RFC 3339), or
+	// null if it never did.
+	LastUpdatedAt *time.Time `json:"lastUpdatedAt"`
+	// Stale is true when the feed has brought nothing new for the retention
+	// period (only once it has been fetched).
+	Stale bool `json:"stale"`
 }

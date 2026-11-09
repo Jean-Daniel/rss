@@ -49,18 +49,11 @@ func Clean(raw string, base string) string {
 	if strings.TrimSpace(raw) == "" {
 		return ""
 	}
-	safe := policy.Sanitize(raw)
-	return finish(safe, parseBase(base))
-}
-
-// parseBase only accepts http(s) URLs: a feed could otherwise supply a base
-// such as "javascript:..." and turn relative links into scripts.
-func parseBase(base string) *url.URL {
-	u, err := url.Parse(strings.TrimSpace(base))
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return nil
-	}
-	return u
+	// PostgreSQL text cannot hold NUL characters.
+	safe := policy.Sanitize(strings.ReplaceAll(raw, "\x00", ""))
+	// Only an http(s) base is used: a feed could otherwise supply a base such
+	// as "javascript:..." and turn relative links into scripts.
+	return finish(safe, ParseHTTP(base))
 }
 
 // finish rewrites the sanitized markup token by token. It only changes the
@@ -143,20 +136,17 @@ func attr(attrs []html.Attribute, key string) string {
 
 func resolve(ref string, base *url.URL) (string, bool) {
 	ref = strings.TrimSpace(ref)
-	if strings.HasPrefix(ref, "data:") {
+	switch {
+	case strings.HasPrefix(ref, "data:"):
 		return ref, true // already validated by the sanitizer
+	case base == nil && strings.HasPrefix(ref, "#"):
+		return ref, true // an in-page anchor
 	}
-	u, err := url.Parse(ref)
-	if err != nil {
+	// Without a base, other relative URLs would point at this app instead
+	// of the feed's site, so they are dropped.
+	u := resolveRef(base, ref)
+	if u == nil {
 		return "", false
-	}
-	if !u.IsAbs() {
-		if base == nil {
-			// Keep in-page anchors; other relative URLs would point at
-			// this app instead of the feed's site.
-			return ref, strings.HasPrefix(ref, "#")
-		}
-		u = base.ResolveReference(u)
 	}
 	switch u.Scheme {
 	case "http", "https", "mailto":

@@ -31,3 +31,17 @@ func TestDecodeFavicon(t *testing.T) {
 		})
 	}
 }
+
+func TestFeverGUID(t *testing.T) {
+	link := "https://example.com/post"
+	// PHP: sprintf('%u', crc32('https://example.com/post'))
+	if got := feverGUID("624656918", link); got != link {
+		t.Errorf("checksum uid: got %q, want the link", got)
+	}
+	if got := feverGUID("urn:uuid:1", link); got != "urn:uuid:1" {
+		t.Errorf("real guid changed: %q", got)
+	}
+	if got := feverGUID("12345", link); got != "12345" {
+		t.Errorf("a numeric guid that is not the checksum changed: %q", got)
+	}
+}

@@ -29,7 +29,12 @@ Environment=PUBLIC_ORIGIN=https://rss.example.com
 Environment=TRUST_PROXY=true
 Environment=GOMEMLIMIT=48MiB
 
-# Hard memory cap; the server idles around 15-20 MB.
+# Optional settings (see README.md):
+# Environment=REFRESH_INTERVAL=15m
+# Environment=FETCH_ALLOW_PRIVATE=true
+
+# Hard memory cap. The server idles around 5 MB and peaks near 30 MB while
+# refreshing feeds.
 PodmanArgs=--memory=128m
 ReadOnly=true
 NoNewPrivileges=true

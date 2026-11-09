@@ -53,6 +53,12 @@ func TestClean(t *testing.T) {
 			excludes: []string{"_blank"},
 		},
 		{
+			name:     "drops NUL characters",
+			raw:      "<p>a\x00b</p>",
+			contains: []string{"<p>ab</p>"},
+			excludes: []string{"\x00"},
+		},
+		{
 			name:     "removes iframes with their content",
 			raw:      `<p>a</p><iframe src="https://evil.example">b</iframe>`,
 			contains: []string{"<p>a</p>"},

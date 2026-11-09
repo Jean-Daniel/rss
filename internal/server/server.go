@@ -21,26 +21,35 @@ import (
 	"fever/internal/store"
 )
 
+// Refresher is the background feed refresher (feeds.Refresher).
+type Refresher interface {
+	RefreshAll(ctx context.Context) error
+	RefreshFeed(ctx context.Context, id int64) (bool, error)
+	Busy() bool
+}
+
 type Server struct {
-	cfg      config.Config
-	pool     *pgxpool.Pool
-	q        *store.Queries
-	sessions *auth.Sessions
-	log      *slog.Logger
-	static   http.Handler
+	cfg       config.Config
+	pool      *pgxpool.Pool
+	q         *store.Queries
+	sessions  *auth.Sessions
+	refresher Refresher
+	log       *slog.Logger
+	static    http.Handler
 }
 
 // New builds the server. webFiles holds the built front end; it is nil in
 // development builds, where the Vite dev server serves the front end.
-func New(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger, webFiles fs.FS) *Server {
+func New(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger, refresher Refresher, webFiles fs.FS) *Server {
 	q := store.New(pool)
 	return &Server{
-		cfg:      cfg,
-		pool:     pool,
-		q:        q,
-		sessions: auth.NewSessions(q, cfg.SecureCookies()),
-		log:      log,
-		static:   newStaticHandler(webFiles),
+		cfg:       cfg,
+		pool:      pool,
+		q:         q,
+		sessions:  auth.NewSessions(q, cfg.SecureCookies()),
+		refresher: refresher,
+		log:       log,
+		static:    newStaticHandler(webFiles),
 	}
 }
 
@@ -53,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/session", s.logout)
 	mux.Handle("GET /api/subscriptions", s.requireAuth(s.getSubscriptions))
 	mux.Handle("GET /api/favicons/{id}", s.requireAuth(s.getFavicon))
+	mux.Handle("POST /api/refresh", s.requireAuth(s.refresh))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Unknown API endpoint.")
 	})

@@ -23,6 +23,7 @@ import (
 	"fever/internal/auth"
 	"fever/internal/config"
 	"fever/internal/db"
+	"fever/internal/feeds"
 	"fever/internal/importer"
 	"fever/internal/server"
 	"fever/internal/store"
@@ -39,7 +40,8 @@ Commands:
   healthcheck    exit 0 if the local server answers /healthz (for the container)
 
 Configuration comes from environment variables: DATABASE_URL, LISTEN_ADDR,
-PUBLIC_ORIGIN, TRUST_PROXY, DB_MAX_CONNS. See README.md.
+PUBLIC_ORIGIN, TRUST_PROXY, DB_MAX_CONNS, REFRESH_INTERVAL,
+FETCH_ALLOW_PRIVATE. See README.md.
 `
 
 func main() {
@@ -109,7 +111,13 @@ func runServe(ctx context.Context, log *slog.Logger) error {
 		return err
 	}
 
-	srv := server.New(cfg, pool, log, web.Files())
+	refresher := feeds.NewRefresher(pool, log, feeds.Options{
+		Interval:     cfg.RefreshInterval,
+		AllowPrivate: cfg.FetchAllowPrivate,
+	})
+	go refresher.Run(ctx)
+
+	srv := server.New(cfg, pool, log, refresher, web.Files())
 	go srv.SweepSessions(ctx)
 
 	httpServer := &http.Server{

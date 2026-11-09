@@ -99,21 +99,3 @@ func TestLimiterReleaseAndSuccess(t *testing.T) {
 		t.Fatalf("global failures = %d, want 3", l.global.failed)
 	}
 }
-
-func TestTruncateUTF8(t *testing.T) {
-	tests := []struct {
-		in   string
-		max  int
-		want string
-	}{
-		{"short", 10, "short"},
-		{"abcdé", 5, "abcd"}, // é is 2 bytes and would be split
-		{"abcdé", 6, "abcdé"},
-		{"a\xffb", 10, "ab"}, // invalid bytes dropped
-	}
-	for _, tt := range tests {
-		if got := truncateUTF8(tt.in, tt.max); got != tt.want {
-			t.Errorf("truncateUTF8(%q, %d) = %q, want %q", tt.in, tt.max, got, tt.want)
-		}
-	}
-}

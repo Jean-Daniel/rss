@@ -1,5 +1,6 @@
 <script lang="ts">
 	import EmptyStream from '#lib/components/EmptyStream.svelte';
+	import { staleText } from '#lib/feed-status.ts';
 	import type { PageProps } from './$types';
 
 	let { data, params }: PageProps = $props();
@@ -11,6 +12,11 @@
 	<EmptyStream>
 		{#if feed.error}
 			<p class="problem">{feed.error}</p>
+		{:else if feed.stale}
+			<p class="stale">
+				{staleText(feed, data.subscriptions.retentionWeeks)}. The site may have stopped publishing,
+				or moved its feed.
+			</p>
 		{/if}
 		<p>No items to show yet.</p>
 		<p class="source">
@@ -29,6 +35,10 @@
 <style>
 	.problem {
 		color: #a26731;
+		font-weight: bold;
+	}
+
+	.stale {
 		font-weight: bold;
 	}
 

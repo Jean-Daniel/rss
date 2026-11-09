@@ -3,3 +3,6 @@ packages:
     output_path: web/src/lib/api/types.ts
     # Go pointers are sent as JSON null, not left out.
     optional_type: "null"
+    # Times are sent as RFC 3339 strings.
+    type_mappings:
+      time.Time: "string"
