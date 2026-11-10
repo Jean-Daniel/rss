@@ -107,7 +107,7 @@ export const SHORTCUTS: { title: string; shortcuts: Shortcut[] }[] = [
 			{ keys: ['?'], what: 'This list', commands: { '?': 'help' } },
 			{
 				keys: ['Esc'],
-				what: 'Close this list, the menu or the feed list; leave the search field',
+				what: 'Close this list, the menu or the feed list; leave the search field; let the current item go',
 				commands: { Escape: 'escape' }
 			}
 		]

@@ -18,7 +18,7 @@
 		feedHref: string;
 		showImages: boolean;
 		now: number;
-		/** Reached with the keyboard: the item the keys act on. */
+		/** The item the keys act on, chosen with them or the mouse. */
 		current?: boolean;
 		onToggleRead: (item: Item) => void;
 	} = $props();
@@ -44,6 +44,7 @@
 	class:current
 	aria-labelledby="item-{item.id}"
 	aria-current={current ? 'true' : undefined}
+	tabindex="-1"
 >
 	<!-- The source: the site, when, who; and the item's buttons. -->
 	<header class="source">
@@ -107,6 +108,11 @@
 		background: var(--surface);
 		box-shadow: var(--shadow);
 		overflow: hidden;
+	}
+
+	/* Focused by J and K (see Stream): .current shows it. */
+	.item:focus {
+		outline: none;
 	}
 
 	.item.current {

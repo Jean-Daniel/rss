@@ -28,6 +28,8 @@ export interface ListKeys {
 	toggleShowRead(): void;
 	/** After Z: these items are unread again. */
 	unreadAgain(items: Restored[]): void;
+	/** Esc: the item chosen is let go, and no longer outlined; false if none was. */
+	letGo(): boolean;
 }
 
 /** What the reader's layout does for the other keys. */
@@ -49,8 +51,6 @@ export interface AppKeys {
 class Shortcuts {
 	/** The list of shortcuts is shown. */
 	helpOpen = $state(false);
-	/** The last items were reached with keys: the current item is marked. */
-	keyboard = $state(false);
 	list: ListKeys | null = null;
 
 	/** Registers the list on screen; returns the function that removes it. */
@@ -78,7 +78,7 @@ export function handleKey(e: KeyboardEvent, app: AppKeys): boolean {
 			e.target.blur();
 			return true;
 		}
-		return app.closePanels();
+		return app.closePanels() || (shortcuts.list?.letGo() ?? false);
 	}
 	if (shortcuts.helpOpen) return false;
 	return run[command](shortcuts.list, app);
@@ -91,7 +91,6 @@ const onList =
 	(act: (list: ListKeys) => void): Run =>
 	(list) => {
 		if (!list) return false;
-		shortcuts.keyboard = true;
 		act(list);
 		return true;
 	};

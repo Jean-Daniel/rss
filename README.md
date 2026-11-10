@@ -162,13 +162,16 @@ Settings.
 | `N` / `Shift N` | Add a feed / a group |
 | `I` | Edit the group or feed shown |
 | `P` | Settings |
-| `Esc` | Close the list of shortcuts, the menu or the feed list; leave the search field |
+| `Esc` | Close the list of shortcuts, the menu or the feed list; leave the search field; let the current item go |
 
-The current item is the first one at the top of the reading area; once keys are used,
-it is outlined. Letters follow the keyboard layout (A is A on AZERTY too) and digits
-work without Shift there, as in Fever. Not carried over: the arrow keys moving
-between groups, feeds and items, `1` and `4` (Hot, Sparks), `B` (blacklist) and `0`
-(excerpts).
+The current item is the one chosen last, with `J`, `K`, a click in it or Tab, while
+it is on screen and until you scroll a third of a screen away; otherwise the first
+one at the top of the reading area. `J` and `K` also give it the keyboard focus.
+Once keys are used, the current item is outlined; a click outlines the item clicked.
+`Esc` and touching the screen remove the outline, and each list starts without it.
+Letters follow the keyboard layout (A is A on AZERTY too) and digits work without
+Shift there, as in Fever. Not carried over: the arrow keys moving between groups,
+feeds and items, `1` and `4` (Hot, Sparks), `B` (blacklist) and `0` (excerpts).
 
 ## Managing feeds and groups
 

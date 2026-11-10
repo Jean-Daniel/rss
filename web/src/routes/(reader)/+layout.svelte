@@ -161,7 +161,7 @@
 	<title>{unread > 0 ? `(${unread}) ` : ''}{title} · Fever</title>
 </svelte:head>
 
-<svelte:window {onkeydown} onpointerdown={() => (shortcuts.keyboard = false)} />
+<svelte:window {onkeydown} />
 
 <ShortcutsHelp />
 

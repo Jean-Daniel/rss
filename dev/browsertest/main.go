@@ -610,6 +610,43 @@ func keyboard(ctx context.Context) {
 	check(waitFor(ctx, opened(site), 2*time.Second), "V: the current item's site opens in a new tab")
 	press("z")
 	check(waitFor(ctx, `!(`+read(1)+` || `+read(2)+` || `+read(3)+`)`, 5*time.Second), "Z: the items just read are unread again")
+
+	// A click in an item lower on the screen makes it the current one, and
+	// the keys go on from there.
+	at5 := eval[[]float64](ctx, `(() => {
+		const item = document.querySelectorAll('.items > [data-id]')[4];
+		window.scrollTo(0, scrollY + item.getBoundingClientRect().top - innerHeight * 0.6);
+		const text = item.querySelector('.content').getBoundingClientRect();
+		return [text.left + 30, text.top + 10];
+	})()`)
+	check(waitFor(ctx, current+` === 'Key item 4'`, 2*time.Second), "item 4 at the top, item 5 below it (%q)", eval[string](ctx, current))
+	must(chromedp.Do(ctx, chromedp.MouseClickXY(at5[0], at5[1])))
+	check(waitFor(ctx, current+` === 'Key item 5'`, 2*time.Second), "click: the item clicked is the current one (%q)", eval[string](ctx, current))
+	press("j")
+	check(waitFor(ctx, current+` === 'Key item 6'`, 3*time.Second), "J after a click: the item after the one clicked (%q)", eval[string](ctx, current))
+	press("k")
+	check(waitFor(ctx, current+` === 'Key item 5'`, 3*time.Second), "K: back to the one clicked (%q)", eval[string](ctx, current))
+	check(eval[bool](ctx, `document.activeElement === document.querySelectorAll('.item')[4]`), "K: the keyboard focus is on it too")
+
+	// Scrolling away on one's own lets the chosen item go.
+	eval[bool](ctx, `(window.scrollBy(0, -innerHeight / 2), true)`)
+	check(waitFor(ctx, current+` === 'Key item 4'`, 2*time.Second), "scrolled up half a screen: the item at the top is current again (%q)", eval[string](ctx, current))
+	press(kb.Escape)
+	check(waitFor(ctx, `!document.querySelector('.item.current')`, 2*time.Second), "Esc: nothing outlined")
+	press("j")
+	check(waitFor(ctx, current+` === 'Key item 5'`, 3*time.Second), "J: outlined again (%q)", eval[string](ctx, current))
+
+	// A tap neither chooses nor outlines an item, and ends the outline.
+	_, err := chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{Enabled: true, MaxTouchPoints: 5})
+	must(err)
+	tapAt := eval[[]float64](ctx, `(() => {
+		const text = document.querySelectorAll('.item')[4].querySelector('.content').getBoundingClientRect();
+		return [text.left + 30, Math.max(text.top, 80) + 10];
+	})()`)
+	tap(ctx, tapAt[0], tapAt[1])
+	check(waitFor(ctx, `!document.querySelector('.item.current')`, 2*time.Second), "tap: nothing outlined")
+	_, err = chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{Enabled: false})
+	must(err)
 	scrolled := eval[float64](ctx, `scrollY`)
 	press(" ")
 	check(waitFor(ctx, fmt.Sprintf(`scrollY > %f`, scrolled), 2*time.Second), "Space: further down")
@@ -652,11 +689,12 @@ func keyboard(ctx context.Context) {
 	// item stays in view, and J then goes on into that page.
 	eval[bool](ctx, `(() => {
 		window.__test.slowPages = true;
-		const last = [...document.querySelectorAll('.items > [data-id]')].at(-1);
-		window.scrollTo(0, scrollY + last.getBoundingClientRect().top - 12);
+		const item = document.querySelectorAll('.items > [data-id]')[18];
+		window.scrollTo(0, scrollY + item.getBoundingClientRect().top - 12);
 		return true;
 	})()`)
-	check(waitFor(ctx, current+` === 'Key item 20'`, 3*time.Second), "the last loaded item at the top (%q)", eval[string](ctx, current))
+	press("j")
+	check(waitFor(ctx, current+` === 'Key item 20'`, 3*time.Second), "J: to the last loaded item (%q)", eval[string](ctx, current))
 	press("j")
 	check(waitFor(ctx, `document.querySelectorAll('.item').length === 25`, 6*time.Second), "the next page comes")
 	press("j")
@@ -672,6 +710,8 @@ func keyboard(ctx context.Context) {
 	check(waitFor(ctx, refreshed, 3*time.Second), "Shift R in the feed's settings: that feed is refreshed")
 	press("2")
 	check(waitFor(ctx, at("/"), 3*time.Second), "2: all items")
+	check(waitFor(ctx, `document.querySelectorAll('.item').length > 0 && !document.querySelector('.item.current')`, 3*time.Second),
+		"another list: nothing outlined until chosen")
 	press("3")
 	check(waitFor(ctx, at("/saved"), 3*time.Second), "3: saved items")
 	press("5")

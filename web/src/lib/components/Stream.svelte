@@ -208,22 +208,69 @@
 		invalidate('app:stream');
 	}
 
-	// Keyboard shortcuts (see shortcuts.svelte.ts). The current item is the
-	// first one still in the reading area, which starts below the phone's
-	// top bar: J and K move to the item after or before it, putting its top
-	// at that line.
+	// Keyboard shortcuts (see shortcuts.svelte.ts).
+	//
+	// The current item is the one chosen last, with J, K or Space, a click
+	// (mouse or pen: taps are for reading) or Tab, while it is on screen and
+	// until the reader scrolls a third of a screen away on their own; else the
+	// first one still in the reading area, which starts below the phone's top
+	// bar. J and K move to the item after or before it, putting its top at
+	// that line and giving it the keyboard focus.
+	//
+	// Outlined: the current item once keys are used, the item clicked while
+	// it is the current one. Esc and touching the screen end it; each list
+	// starts without.
 	let list: HTMLElement | undefined = $state();
 	const GAP = 12;
 	const readingTop = () => document.querySelector('.topbar')?.getBoundingClientRect().height ?? 0;
 	const nodes = () => (list ? [...list.querySelectorAll<HTMLElement>(':scope > [data-id]')] : []);
 	const itemFor = (node: HTMLElement | undefined) =>
 		node && items.find((it) => it.id === Number(node.dataset.id));
+	let chosenId = $state<number | null>(null);
+	let chosenAt = 0; // where the page was scrolled when it was chosen
+	let outline = $state<'keys' | 'pointer' | null>(null);
+
+	function setChosen(node: HTMLElement, by: 'keys' | 'pointer') {
+		chosenId = Number(node.dataset.id);
+		chosenAt = scrollY;
+		// A click while keys are used keeps the keys' outline.
+		if (by === 'keys' || outline === null) outline = by;
+	}
 	function currentNode() {
 		const top = readingTop();
-		return nodes().find((n) => n.getBoundingClientRect().bottom > top + 40);
+		const all = nodes();
+		const chosen = all.find((n) => Number(n.dataset.id) === chosenId);
+		const box = chosen?.getBoundingClientRect();
+		if (chosen && box && box.bottom > top + 40 && box.top < innerHeight - 40) return chosen;
+		return all.find((n) => n.getBoundingClientRect().bottom > top + 40);
 	}
-	function scrollToNode(node: Element) {
+	function scrollToNode(node: HTMLElement) {
 		window.scrollTo({ top: scrollY + node.getBoundingClientRect().top - readingTop() - GAP });
+		if (!node.dataset.id) return;
+		setChosen(node, 'keys');
+		// The keyboard focus follows (Enter, Tab, screen readers).
+		node.querySelector<HTMLElement>('article')?.focus({ preventScroll: true });
+	}
+	function choose(target: EventTarget | null, by: 'keys' | 'pointer') {
+		const node = target instanceof Element ? target.closest<HTMLElement>('[data-id]') : null;
+		if (node && list?.contains(node)) setChosen(node, by);
+	}
+	function chooseOnClick(node: HTMLElement) {
+		const down = (e: PointerEvent) => e.pointerType !== 'touch' && choose(e.target, 'pointer');
+		// Tab into an item. Not the item itself: J and K focus it after
+		// choosing it, and the browser gives it the focus back (closing a
+		// dialog) when it may no longer be the one chosen.
+		const focus = (e: FocusEvent) =>
+			e.target instanceof Element &&
+			!e.target.matches('article') &&
+			e.target.matches(':focus-visible') &&
+			choose(e.target, 'keys');
+		node.addEventListener('pointerdown', down);
+		node.addEventListener('focusin', focus);
+		return () => {
+			node.removeEventListener('pointerdown', down);
+			node.removeEventListener('focusin', focus);
+		};
 	}
 	// The item after the current one, and the one to go back to: the
 	// current one if it is partly scrolled past, else the one before.
@@ -243,7 +290,7 @@
 	// read). With more to come, the page cannot scroll "Loading…" up there:
 	// the last item stays in view, and J goes on into the next page.
 	function toEnd() {
-		const end = document.querySelector('.end, .more');
+		const end = document.querySelector<HTMLElement>('.end, .more');
 		if (end) scrollToNode(end);
 	}
 
@@ -251,13 +298,27 @@
 	const updateCurrent = () => {
 		currentId = itemFor(currentNode())?.id ?? null;
 	};
-	// While keys are used, the current item is marked, and follows the scroll.
+	const outlinedId = $derived(
+		outline === 'keys'
+			? currentId
+			: outline === 'pointer' && currentId === chosenId
+				? chosenId
+				: null
+	);
+	// While an item is chosen or outlined, the current one follows the
+	// scroll; scrolling away on one's own lets the chosen one go.
 	$effect(() => {
-		if (!shortcuts.keyboard) return;
+		if (outline === null && chosenId === null) return;
 		let frame = 0;
 		const follow = () => {
 			cancelAnimationFrame(frame);
-			frame = requestAnimationFrame(updateCurrent);
+			frame = requestAnimationFrame(() => {
+				if (chosenId !== null && Math.abs(scrollY - chosenAt) > innerHeight / 3) {
+					chosenId = null;
+					if (outline === 'pointer') outline = null;
+				}
+				updateCurrent();
+			});
 		};
 		updateCurrent();
 		addEventListener('scroll', follow, { passive: true });
@@ -266,6 +327,21 @@
 			removeEventListener('scroll', follow);
 		};
 	});
+	// Touching the screen ends the outline.
+	$effect(() => {
+		const touched = (e: PointerEvent) => {
+			if (e.pointerType === 'touch') outline = null;
+		};
+		addEventListener('pointerdown', touched, { passive: true });
+		return () => removeEventListener('pointerdown', touched);
+	});
+	// The keys acting on items outline the current one.
+	const byKeys =
+		<A extends unknown[]>(act: (...args: A) => void) =>
+		(...args: A) => {
+			outline = 'keys';
+			act(...args);
+		};
 
 	// The site of an item's feed: its stored address, else the home page of
 	// the item's or the feed's address. Web addresses only.
@@ -320,45 +396,49 @@
 
 	onMount(() =>
 		shortcuts.setList({
-			next() {
+			next: byKeys(() => {
 				const node = after();
 				if (node) scrollToNode(node);
 				else toEnd();
-			},
-			previous() {
+			}),
+			previous: byKeys(() => {
 				const node = before();
 				if (node) scrollToNode(node);
 				else window.scrollTo({ top: 0 });
-			},
-			page(back) {
+			}),
+			page: byKeys((back: boolean) => {
 				const top = readingTop();
 				const height = innerHeight - top - 40;
 				const node = back ? before() : after();
 				const y = node?.getBoundingClientRect().top;
 				const inView = y !== undefined && (back ? y > top - height : y < innerHeight - 40);
-				if (node && inView) scrollToNode(node);
-				else window.scrollBy({ top: back ? -height : height });
-			},
-			open() {
+				if (node && inView) {
+					scrollToNode(node);
+				} else {
+					window.scrollBy({ top: back ? -height : height });
+					chosenAt = scrollY; // paging through it keeps the item chosen
+				}
+			}),
+			open: byKeys(() => {
 				const item = itemFor(currentNode());
 				if (!item?.url) return;
 				window.open(item.url, '_blank', 'noopener,noreferrer');
 				itemState.markRead(item);
-			},
-			toggleSaved() {
+			}),
+			toggleSaved: byKeys(() => {
 				const item = itemFor(currentNode());
 				if (!item) return;
 				itemState.setSaved(item, !item.saved).catch((err) => {
 					alert(`Could not change the saved state: ${err instanceof Error ? err.message : err}`);
 				});
-			},
-			visitSite(markRead) {
+			}),
+			visitSite: byKeys((markRead: boolean) => {
 				const item = itemFor(currentNode());
 				const site = item && siteOf(item);
 				if (!item || !site) return;
 				window.open(site, '_blank', 'noopener,noreferrer');
 				if (markRead) void markFeedRead(item.feedId);
-			},
+			}),
 			markAllRead(everything) {
 				void markAllRead(everything);
 			},
@@ -376,6 +456,14 @@
 				// Gone from a list of unread items (after "mark all as
 				// read"): it is loaded again to show them, as Fever did.
 				if (missing && options.unreadOnly) void invalidate('app:stream');
+			},
+			letGo() {
+				if (outline === null && chosenId === null) return false;
+				outline = null;
+				chosenId = null;
+				const focused = document.activeElement;
+				if (focused instanceof HTMLElement && list?.contains(focused)) focused.blur();
+				return true;
 			}
 		})
 	);
@@ -435,7 +523,7 @@
 		{/if}
 	</div>
 {:else}
-	<div class="items" bind:this={list}>
+	<div class="items" bind:this={list} {@attach chooseOnClick}>
 		{#each items as item (item.id)}
 			<div data-id={item.id} {@attach watchReading(item)}>
 				<ItemView
@@ -444,7 +532,7 @@
 					feedHref={feedHref(item.feedId)}
 					showImages={options.showImages}
 					now={clock.now}
-					current={shortcuts.keyboard && item.id === currentId}
+					current={item.id === outlinedId}
 					onToggleRead={toggleRead}
 				/>
 			</div>
