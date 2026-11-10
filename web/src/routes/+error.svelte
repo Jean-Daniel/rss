@@ -31,7 +31,7 @@
 	.card {
 		width: min(100%, 380px);
 		padding: 28px 24px 24px;
-		border-radius: var(--radius);
+		border-radius: var(--radius-card);
 		background: var(--surface);
 		box-shadow: var(--shadow);
 		text-align: center;
@@ -40,7 +40,7 @@
 	.logo {
 		margin: 0 0 12px;
 		font-size: 28px;
-		font-weight: bold;
+		font-weight: 600;
 		letter-spacing: -0.02em;
 	}
 
@@ -62,10 +62,10 @@
 		height: 40px;
 		padding: 0 20px;
 		border: 0;
-		border-radius: 4px;
-		background: var(--row-selected);
-		color: #fff;
-		font-weight: bold;
+		border-radius: var(--radius);
+		background: var(--button-strong);
+		color: var(--button-strong-text);
+		font-weight: 600;
 		cursor: pointer;
 	}
 </style>

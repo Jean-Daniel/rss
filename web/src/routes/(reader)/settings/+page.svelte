@@ -251,7 +251,7 @@
 	}
 
 	.failing .status {
-		color: #a26731;
+		color: var(--warn);
 	}
 
 	.import {

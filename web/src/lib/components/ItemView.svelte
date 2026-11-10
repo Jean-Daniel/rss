@@ -45,22 +45,8 @@
 	aria-labelledby="item-{item.id}"
 	aria-current={current ? 'true' : undefined}
 >
-	<header>
-		<h2 class="title" id="item-{item.id}">
-			{#if item.url}
-				<!-- Opening the article counts as reading it (also with a middle click). -->
-				<a
-					href={item.url}
-					target="_blank"
-					rel="noopener noreferrer"
-					onclick={() => itemState.markRead(item)}
-					onauxclick={(e) => e.button === 1 && itemState.markRead(item)}
-					>{item.title || 'Untitled'}</a
-				>
-			{:else}
-				{item.title || 'Untitled'}
-			{/if}
-		</h2>
+	<!-- The source: the site, when, who; and the item's buttons. -->
+	<header class="source">
 		<div class="meta">
 			{#if feed}
 				<a class="feed" href={feedHref}>
@@ -95,14 +81,29 @@
 			</button>
 		</div>
 	</header>
+	<h2 class="title" id="item-{item.id}">
+		{#if item.url}
+			<!-- Opening the article counts as reading it (also with a middle click). -->
+			<a
+				href={item.url}
+				target="_blank"
+				rel="noopener noreferrer"
+				onclick={() => itemState.markRead(item)}
+				onauxclick={(e) => e.button === 1 && itemState.markRead(item)}>{item.title || 'Untitled'}</a
+			>
+		{:else}
+			{item.title || 'Untitled'}
+		{/if}
+	</h2>
 	<!-- Sanitized on the server (internal/content). -->
 	<div class="content" class:no-images={!showImages}>{@html item.content}</div>
 </article>
 
 <style>
+	/* A card per item, so each one's end is clear. */
 	.item {
 		margin-bottom: 16px;
-		border-radius: var(--radius);
+		border-radius: var(--radius-card);
 		background: var(--surface);
 		box-shadow: var(--shadow);
 		overflow: hidden;
@@ -114,88 +115,96 @@
 			var(--shadow);
 	}
 
-	header {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		grid-template-areas: 'title actions' 'meta actions';
-		gap: 2px 8px;
-		padding: 14px 12px 10px 18px;
-		border-bottom: 1px solid #ececec;
-	}
-
-	.title {
-		grid-area: title;
-		margin: 0;
-		font-size: 18px;
-		line-height: 1.3;
-		overflow-wrap: anywhere;
-	}
-
-	.title a {
-		color: var(--text);
-	}
-
-	.title a:hover {
-		color: var(--accent);
-	}
-
-	.read .title,
-	.read .title a {
-		font-weight: normal;
-		color: var(--text-muted);
+	.source {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 40px;
+		padding: 2px 6px 2px 18px;
+		border-bottom: 1px solid var(--line);
+		background: var(--surface-tint);
 	}
 
 	.meta {
-		grid-area: meta;
+		flex: 1;
+		min-width: 0;
 		display: flex;
-		flex-wrap: wrap;
 		align-items: center;
-		gap: 2px 10px;
-		font-size: 12px;
+		gap: 0 8px;
+		overflow: hidden;
+		font-size: 12.5px;
+		color: var(--text-faint);
+		white-space: nowrap;
+	}
+
+	.meta > * + *::before {
+		content: '·';
+		margin-right: 8px;
 		color: var(--text-faint);
 	}
 
 	.feed {
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
+		gap: 7px;
 		min-width: 0;
 		color: var(--text-muted);
 	}
 
-	.feed span {
+	/* When short of room, the author gives way first, then the site. */
+	.feed {
+		flex: 0 1 auto;
+	}
+
+	time {
+		flex: none;
+	}
+
+	.author {
+		flex: 0 4 auto;
+		min-width: 3em;
+	}
+
+	.feed span,
+	.author {
 		overflow: hidden;
 		text-overflow: ellipsis;
-		white-space: nowrap;
+	}
+
+	@media (max-width: 420px) {
+		.author {
+			display: none;
+		}
 	}
 
 	.actions {
-		grid-area: actions;
 		display: flex;
-		align-items: flex-start;
+		flex: none;
 	}
 
 	.action {
 		display: grid;
 		place-items: center;
-		width: 36px;
-		height: 36px;
+		width: 34px;
+		height: 34px;
 		padding: 0;
 		border: 0;
 		border-radius: var(--radius);
 		background: transparent;
-		color: #b5b5b5;
+		color: var(--text-faint);
 		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
 	}
 
-	.action:hover {
+	.action:hover,
+	.action:active {
 		background: var(--row-hover);
 		color: var(--text-muted);
 	}
 
 	.action svg {
-		width: 18px;
-		height: 18px;
+		width: 17px;
+		height: 17px;
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 1.6;
@@ -226,16 +235,43 @@
 		}
 	}
 
-	/* Article text. */
-	.content {
-		padding: 14px 18px 18px;
-		font-size: 15px;
-		line-height: 1.6;
-		overflow-wrap: break-word;
+	.title {
+		margin: 0;
+		padding: 16px 24px 0;
+		font-family: var(--font-reading);
+		font-size: 23px;
+		font-weight: 600;
+		line-height: 1.25;
+		overflow-wrap: anywhere;
+	}
+
+	.title a {
+		font-weight: inherit;
+		color: var(--text);
+	}
+
+	.title a:hover {
+		color: var(--accent);
+	}
+
+	/* Read items step back. */
+	.read .title,
+	.read .title a {
+		font-weight: 500;
+		color: var(--text-muted);
 	}
 
 	.read .content {
-		color: #555;
+		color: var(--text-muted);
+	}
+
+	/* Article text. */
+	.content {
+		padding: 12px 24px 24px;
+		font-family: var(--font-reading);
+		font-size: 17.5px;
+		line-height: 1.62;
+		overflow-wrap: break-word;
 	}
 
 	.content :global(:first-child) {
@@ -246,17 +282,23 @@
 		margin-bottom: 0;
 	}
 
+	.content :global(p) {
+		margin: 0 0 0.9em;
+	}
+
 	.content :global(a) {
 		font-weight: normal;
 		color: var(--accent);
 		text-decoration: underline;
-		text-decoration-color: rgb(170 17 0 / 0.3);
+		text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
 		text-underline-offset: 2px;
 	}
 
-	.content :global(img) {
+	.content :global(img),
+	.content :global(video) {
 		max-width: 100%;
 		height: auto;
+		border-radius: 6px;
 	}
 
 	.content.no-images :global(img) {
@@ -267,16 +309,17 @@
 	.content :global(h2),
 	.content :global(h3),
 	.content :global(h4) {
-		margin: 1.2em 0 0.5em;
+		margin: 1.3em 0 0.5em;
+		font-weight: 600;
 		line-height: 1.3;
 	}
 
 	.content :global(h1) {
-		font-size: 1.35em;
+		font-size: 1.3em;
 	}
 
 	.content :global(h2) {
-		font-size: 1.2em;
+		font-size: 1.18em;
 	}
 
 	.content :global(h3),
@@ -286,23 +329,34 @@
 
 	.content :global(blockquote) {
 		margin: 1em 0;
-		padding: 0 0 0 14px;
-		border-left: 3px solid #ddd;
+		padding: 0 0 0 16px;
+		border-left: 3px solid var(--line);
 		color: var(--text-muted);
+		font-style: italic;
 	}
 
 	.content :global(pre) {
-		padding: 10px 12px;
+		padding: 12px 14px;
 		overflow-x: auto;
-		border-radius: 4px;
-		background: #f4f4f4;
-		font-size: 13px;
-		line-height: 1.45;
+		border-radius: var(--radius);
+		background: var(--code-bg);
+		font-size: 13.5px;
+		line-height: 1.5;
 	}
 
 	.content :global(code) {
-		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-		font-size: 0.9em;
+		font-family: var(--font-mono);
+		font-size: 0.86em;
+	}
+
+	.content :global(pre code) {
+		font-size: inherit;
+	}
+
+	.content :global(hr) {
+		border: 0;
+		border-top: 1px solid var(--line);
+		margin: 1.5em 0;
 	}
 
 	.content :global(table) {
@@ -310,31 +364,40 @@
 		max-width: 100%;
 		overflow-x: auto;
 		border-collapse: collapse;
+		font-family: var(--font);
+		font-size: 14px;
 	}
 
 	.content :global(th),
 	.content :global(td) {
-		padding: 4px 8px;
-		border: 1px solid #e3e3e3;
+		padding: 5px 9px;
+		border: 1px solid var(--line);
 	}
 
 	.content :global(figure) {
-		margin: 1em 0;
+		margin: 1.2em 0;
 	}
 
 	.content :global(figcaption) {
+		margin-top: 6px;
+		font-family: var(--font);
 		font-size: 13px;
 		color: var(--text-faint);
 	}
 
 	@media (max-width: 699px) {
-		header {
-			padding: 12px 8px 8px 14px;
+		.source {
+			padding-left: 14px;
+		}
+
+		.title {
+			padding: 14px 16px 0;
+			font-size: 21px;
 		}
 
 		.content {
-			padding: 12px 14px 16px;
-			font-size: 16px;
+			padding: 10px 16px 20px;
+			font-size: 17px;
 		}
 	}
 </style>

@@ -91,7 +91,7 @@
 		gap: 10px;
 		width: min(100%, 340px);
 		padding: 28px 24px 24px;
-		border-radius: var(--radius);
+		border-radius: var(--radius-card);
 		background: var(--surface);
 		box-shadow: var(--shadow);
 	}
@@ -108,26 +108,28 @@
 	}
 
 	label {
-		font-weight: bold;
+		font-weight: 600;
 	}
 
 	input[type='password'] {
-		height: 40px;
-		padding: 0 10px;
-		border: 1px solid #c8c8c8;
-		border-radius: 4px;
+		height: 42px;
+		padding: 0 12px;
+		border: 1px solid var(--field-line);
+		border-radius: var(--radius);
+		background: var(--surface);
+		color: var(--text);
 		font: inherit;
 		font-size: 16px; /* avoids the iOS zoom on focus */
 	}
 
 	button {
-		height: 40px;
+		height: 42px;
 		margin-top: 6px;
 		border: 0;
-		border-radius: 4px;
-		background: var(--row-selected);
-		color: #fff;
-		font-weight: bold;
+		border-radius: var(--radius);
+		background: var(--button-strong);
+		color: var(--button-strong-text);
+		font-weight: 600;
 		cursor: pointer;
 	}
 
@@ -140,17 +142,17 @@
 	.error {
 		margin: 0;
 		padding: 8px 10px;
-		border-radius: 4px;
+		border-radius: var(--radius);
 		font-size: 13px;
 	}
 
 	.notice {
-		background: #fdf6e3;
-		color: #6b5418;
+		background: var(--warn-bg);
+		color: var(--warn-text);
 	}
 
 	.error {
-		background: #fbe9e7;
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
 		color: var(--accent);
 	}
 </style>

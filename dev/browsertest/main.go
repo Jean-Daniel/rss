@@ -613,8 +613,12 @@ func keyboard(ctx context.Context) {
 	scrolled := eval[float64](ctx, `scrollY`)
 	press(" ")
 	check(waitFor(ctx, fmt.Sprintf(`scrollY > %f`, scrolled), 2*time.Second), "Space: further down")
+	// Back to the previous item if it starts within a screen, else a page up:
+	// either way, up (items here are longer than the test's window).
+	down := eval[float64](ctx, `scrollY`)
 	press(" ", shift)
-	check(waitFor(ctx, fmt.Sprintf(`Math.abs(scrollY - %f) < 2`, scrolled), 2*time.Second), "Shift Space: back up (%v, was %v)", eval[float64](ctx, `scrollY`), scrolled)
+	check(waitFor(ctx, fmt.Sprintf(`scrollY < %f && scrollY >= %f`, down, scrolled-1), 2*time.Second),
+		"Shift Space: back up (%v, from %v)", eval[float64](ctx, `scrollY`), down)
 	press("j")
 	cur := eval[string](ctx, current)
 	tabs := eval[int](ctx, `window.__test.opened.length`)

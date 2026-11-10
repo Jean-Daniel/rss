@@ -13,8 +13,8 @@ and mobile, and read state is stored in PostgreSQL.
 
 Status: steps 1 to 6 are done: schema, login, the importer for the old data, the page
 layout, feed refreshing, reading (item lists, mark as read on scroll, saving), the
-phone and installed-app polish, managing feeds, groups and preferences, search, and
-Fever's keyboard shortcuts. Left for later: dark mode.
+phone and installed-app polish, managing feeds, groups and preferences, search,
+Fever's keyboard shortcuts, and a lighter look with a dark mode.
 
 ## Configuration
 
@@ -104,6 +104,11 @@ images and unread count. Saved items are listed newest first.
   ends up read like the others.
 - Feed HTML is sanitized on the server, and a Content Security Policy blocks any
   script that is not the app's own.
+- **Look:** each item is a card: a small band with the site's icon and name, when
+  and by whom, and the save and unread buttons; then the title and the article, in
+  the system's reading serif (Iowan or Charter on Apple devices, Georgia elsewhere),
+  in a column of about 70 characters. Read items are dimmed. Light or dark follows
+  the system.
 
 ## Search
 

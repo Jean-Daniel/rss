@@ -61,7 +61,7 @@
 	}
 
 	label:hover {
-		background: var(--row);
+		background: var(--row-hover);
 	}
 
 	span {

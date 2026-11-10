@@ -21,7 +21,7 @@
 	{#if feeds.length === 0}
 		<p class="empty box">No feeds here.</p>
 	{:else}
-		<ul class="rows box">
+		<ul class="rows">
 			{#each feeds as feed (feed.id)}
 				<li>
 					<a
@@ -37,7 +37,7 @@
 						<FeedIcon faviconId={feed.faviconId} />
 						<span class="label">{feed.title}</span>
 						{#if feed.error !== null}
-							<span class="warning" aria-label="Problem with this feed">!</span>
+							<span class="warning" role="img" aria-label="Problem with this feed"></span>
 						{:else}
 							{#if feed.stale}
 								<!-- Nothing new for the retention period: the feed may be abandoned. -->
@@ -65,10 +65,10 @@
 
 <style>
 	.heading {
-		margin: 0 0 8px;
-		padding: 0 4px;
+		margin: 4px 0 6px;
+		padding: 0 10px;
 		font-size: 11px;
-		font-weight: bold;
+		font-weight: 600;
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		color: var(--text-faint);
@@ -83,10 +83,6 @@
 		color: var(--text-muted);
 	}
 
-	.failing {
-		color: #a26731;
-	}
-
 	.stale {
 		flex: none;
 		width: 14px;
@@ -98,18 +94,13 @@
 		stroke-linejoin: round;
 	}
 
-	[aria-current='page'] .stale {
-		stroke: rgb(255 255 255 / 0.75);
-	}
-
+	/* A feed with a problem: a small amber dot (the message is its title). */
 	.warning {
-		display: inline-grid;
-		place-items: center;
-		width: 16px;
-		height: 16px;
+		flex: none;
+		width: 7px;
+		height: 7px;
+		margin: 0 4px;
 		border-radius: 50%;
-		background: #c9853f;
-		color: #fff;
-		font-size: 11px;
+		background: var(--warn);
 	}
 </style>

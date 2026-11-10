@@ -8,7 +8,7 @@
 </script>
 
 <nav aria-label="Sections and groups">
-	<ul class="rows box">
+	<ul class="rows">
 		<li>
 			<a
 				href="/"

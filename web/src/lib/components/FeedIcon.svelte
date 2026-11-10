@@ -27,7 +27,8 @@
 	}
 
 	.placeholder {
-		background: radial-gradient(circle at 50% 50%, #c8c8c8 0 5px, transparent 5.5px);
+		background: radial-gradient(circle at 50% 50%, var(--text-faint) 0 4.5px, transparent 5px);
+		opacity: 0.5;
 	}
 
 	:global(a.read) .favicon {

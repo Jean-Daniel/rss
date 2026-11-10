@@ -60,7 +60,7 @@
 		border: 1px solid var(--field-line);
 		border-bottom-width: 2px;
 		border-radius: 4px;
-		background: var(--row);
+		background: var(--surface-tint);
 		font: 12px/1.4 var(--font);
 		text-align: center;
 	}

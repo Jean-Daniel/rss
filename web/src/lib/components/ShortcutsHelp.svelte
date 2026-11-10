@@ -30,14 +30,14 @@
 		max-height: calc(100dvh - 64px);
 		padding: 18px 20px 20px;
 		border: 0;
-		border-radius: var(--radius);
+		border-radius: var(--radius-card);
 		background: var(--surface);
 		color: var(--text);
-		box-shadow: 0 10px 40px rgb(0 0 0 / 0.3);
+		box-shadow: var(--shadow-float);
 	}
 
 	dialog::backdrop {
-		background: rgb(0 0 0 / 0.3);
+		background: var(--backdrop);
 	}
 
 	h2 {

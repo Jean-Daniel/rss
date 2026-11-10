@@ -33,16 +33,18 @@
 
 <style>
 	.notice {
-		margin-bottom: 12px;
-		padding: 10px 14px;
-		border-radius: var(--radius);
-		background: #f6f1e7;
-		color: #6b5418;
+		margin-bottom: 14px;
+		padding: 12px 16px;
+		border-radius: var(--radius-card);
+		background: var(--surface-tint);
+		box-shadow: var(--shadow);
+		color: var(--text-muted);
 	}
 
 	.notice.problem {
-		background: #fbeee4;
-		color: #8a4b1d;
+		background: var(--warn-bg);
+		box-shadow: none;
+		color: var(--warn-text);
 	}
 
 	.notice p {

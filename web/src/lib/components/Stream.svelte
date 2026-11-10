@@ -483,41 +483,43 @@
 		margin-bottom: 12px;
 	}
 
+	/* Unread / All: a switch, the chosen side raised. */
 	.segmented {
 		display: inline-flex;
-		border-radius: var(--radius);
-		box-shadow: var(--shadow);
-		overflow: hidden;
+		gap: 2px;
+		padding: 2px;
+		border-radius: calc(var(--radius) + 2px);
+		background: var(--row-selected);
 	}
 
 	.segmented button,
 	.mark-all,
 	.more button {
-		height: 30px;
+		height: 28px;
 		padding: 0 12px;
 		border: 0;
-		background: var(--row);
+		border-radius: var(--radius);
+		background: transparent;
 		color: var(--text-muted);
 		font-size: 13px;
+		font-weight: 500;
 		cursor: pointer;
 	}
 
-	.segmented button + button {
-		border-left: 1px solid var(--row-line);
-	}
-
 	.segmented button[aria-pressed='true'] {
-		background: var(--row-selected);
-		color: var(--row-selected-text);
+		background: var(--surface);
+		box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+		color: var(--text);
 	}
 
 	.mark-all,
 	.more button {
-		border-radius: var(--radius);
-		box-shadow: var(--shadow);
+		height: 32px;
+		box-shadow: inset 0 0 0 1px var(--field-line);
 	}
 
 	.mark-all:hover:not(:disabled),
+	.more button:hover,
 	.segmented button:hover:not([aria-pressed='true']) {
 		background: var(--row-hover);
 		color: var(--text);
@@ -535,6 +537,11 @@
 		}
 	}
 
+	.empty p {
+		font-family: var(--font-reading);
+		font-size: 17px;
+	}
+
 	.empty,
 	.more,
 	.end {
@@ -544,7 +551,7 @@
 	}
 
 	.empty {
-		border-radius: var(--radius);
+		border-radius: var(--radius-card);
 		background: var(--surface);
 		box-shadow: var(--shadow);
 	}

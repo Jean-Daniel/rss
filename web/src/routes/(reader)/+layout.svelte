@@ -302,12 +302,13 @@
 </div>
 
 <style>
+	/* The lists, then the reading column at its width, centered. */
 	.shell {
 		display: grid;
 		grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
 		gap: var(--gap);
 		align-items: start;
-		max-width: 1180px;
+		max-width: calc(var(--sidebar-w) + var(--gap) + var(--stream-w) + 32px);
 		margin: 0 auto;
 		padding: 16px max(16px, env(safe-area-inset-right)) 48px max(16px, env(safe-area-inset-left));
 	}
@@ -364,7 +365,7 @@
 	}
 
 	.failing {
-		color: #a26731;
+		color: var(--warn);
 	}
 
 	.status-error {
@@ -446,14 +447,14 @@
 		inset: 0;
 		padding: 0;
 		border: 0;
-		background: rgb(0 0 0 / 0.3);
+		background: var(--backdrop);
 	}
 
 	/* Wide: sections | feeds (optional) | items */
 	@media (min-width: 1100px) {
 		.shell.feeds-visible {
 			grid-template-columns: var(--sidebar-w) var(--feeds-w) minmax(0, 1fr);
-			max-width: 1440px;
+			max-width: calc(var(--sidebar-w) + var(--feeds-w) + 2 * var(--gap) + var(--stream-w) + 32px);
 		}
 
 		.shell.feeds-visible .feeds {
@@ -472,16 +473,16 @@
 			z-index: 20;
 			width: var(--feeds-w);
 			max-height: none;
-			padding: 12px;
-			border-radius: var(--radius);
+			padding: 12px 8px;
+			border-radius: var(--radius-card);
 			background: var(--page);
-			box-shadow: 0 10px 40px rgb(0 0 0 / 0.3);
+			box-shadow: var(--shadow-float);
 		}
 
 		.shell.feeds-overlay .backdrop {
 			display: block;
 			z-index: 10;
-			background: rgb(0 0 0 / 0.08);
+			background: color-mix(in srgb, var(--backdrop) 30%, transparent);
 		}
 	}
 
@@ -502,10 +503,10 @@
 			padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0
 				max(4px, env(safe-area-inset-left));
 			min-height: calc(48px + env(safe-area-inset-top));
-			background: rgb(236 236 236 / 0.92);
-			backdrop-filter: blur(10px);
-			-webkit-backdrop-filter: blur(10px);
-			border-bottom: 1px solid var(--row-line);
+			background: color-mix(in srgb, var(--page) 88%, transparent);
+			backdrop-filter: blur(12px);
+			-webkit-backdrop-filter: blur(12px);
+			border-bottom: 1px solid var(--line);
 		}
 
 		.topbar-title {
@@ -561,7 +562,7 @@
 
 		.drawer-open .panels {
 			transform: none;
-			box-shadow: 4px 0 24px rgb(0 0 0 / 0.25);
+			box-shadow: var(--shadow-float);
 		}
 
 		.sidebar,

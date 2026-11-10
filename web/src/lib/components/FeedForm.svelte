@@ -163,14 +163,14 @@
 		margin-bottom: 14px;
 		padding: 8px 12px;
 		border-radius: var(--radius);
-		background: var(--row);
+		background: var(--surface-tint);
 		font-size: 13px;
 		overflow-wrap: anywhere;
 	}
 
 	.state.problem {
-		background: #fbeee4;
-		color: #8a4b1d;
+		background: var(--warn-bg);
+		color: var(--warn-text);
 	}
 
 	.state p {

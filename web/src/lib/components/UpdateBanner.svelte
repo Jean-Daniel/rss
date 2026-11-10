@@ -28,10 +28,10 @@
 		max-width: calc(100vw - 32px);
 		padding: 10px 10px 10px 16px;
 		transform: translateX(-50%);
-		border-radius: var(--radius);
-		background: var(--row-selected);
-		box-shadow: 0 6px 24px rgb(0 0 0 / 0.3);
-		color: #fff;
+		border-radius: var(--radius-card);
+		background: var(--button-strong);
+		box-shadow: var(--shadow-float);
+		color: var(--button-strong-text);
 		font-size: 13px;
 	}
 
@@ -40,10 +40,10 @@
 		height: 32px;
 		padding: 0 14px;
 		border: 0;
-		border-radius: 4px;
-		background: #fff;
-		color: var(--text);
-		font-weight: bold;
+		border-radius: var(--radius);
+		background: var(--button-strong-text);
+		color: var(--button-strong);
+		font-weight: 600;
 		cursor: pointer;
 	}
 </style>
