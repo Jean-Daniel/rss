@@ -8,6 +8,7 @@
 	import { itemState, withLocalCounts } from '#lib/item-state.svelte.ts';
 	import SourceList from '#lib/components/SourceList.svelte';
 	import { contextGroup, selectionFrom, selectionTitle, unreadOf } from '#lib/selection.ts';
+	import { setShownSubscriptions } from '#lib/subscriptions.ts';
 	import { swipeToClose } from '#lib/swipe.ts';
 	import { ago } from '#lib/time.ts';
 	import { phone, ui, wide } from '#lib/ui.svelte.ts';
@@ -17,6 +18,7 @@
 
 	// Counts include reads made here that the server has not reported back yet.
 	const subs = $derived(withLocalCounts(data.subscriptions, itemState.counts));
+	setShownSubscriptions(() => subs);
 	const selection = $derived(
 		selectionFrom(page.route.id, page.params, page.url.searchParams, subs)
 	);
@@ -51,14 +53,26 @@
 		}
 	}
 
+	// A boolean: reading items changes `subs` all the time, and that must not
+	// restart the wait below.
+	const serverRefreshing = $derived(data.subscriptions.refreshing);
 	$effect(() => {
-		if (!subs.refreshing) return;
-		const timer = setTimeout(() => itemState.reloadCounts(), 2000);
-		return () => clearTimeout(timer);
+		if (!serverRefreshing) return;
+		let timer: ReturnType<typeof setTimeout>;
+		let stopped = false;
+		const poll = async () => {
+			await itemState.reloadCountsQuietly();
+			if (!stopped) timer = setTimeout(poll, 2000);
+		};
+		timer = setTimeout(poll, 2000);
+		return () => {
+			stopped = true;
+			clearTimeout(timer);
+		};
 	});
 
 	// Keep counts current, including reads made on another device.
-	$effect(() => onResume(() => itemState.reloadCounts()));
+	$effect(() => onResume(() => void itemState.reloadCountsQuietly()));
 
 	async function logout() {
 		try {

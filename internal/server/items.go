@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"fever/internal/apitypes"
@@ -28,6 +29,51 @@ const (
 // maxChanges is how many changes one GET /api/items/changes returns (a
 // variable so tests can lower it).
 var maxChanges = 2000
+
+// stateChanges tracks the requests that are changing read or saved state
+// right now. A change is stamped with the time its statement started, but
+// other requests only see it once it is committed: a device that synced while
+// one was running, and asked next time for the changes made since then,
+// would never get it. So answers are dated from the start of the oldest
+// change still running. Only this server changes that state.
+type stateChanges struct {
+	mu      sync.Mutex
+	last    uint64
+	started map[uint64]time.Time
+}
+
+// begin records a request that is about to change state; it returns the
+// function to call when it is done.
+func (c *stateChanges) begin() (done func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.started == nil {
+		c.started = make(map[uint64]time.Time)
+	}
+	c.last++
+	id := c.last
+	c.started[id] = time.Now()
+	return func() {
+		c.mu.Lock()
+		delete(c.started, id)
+		c.mu.Unlock()
+	}
+}
+
+// settledAt returns the time before which every state change shows in a
+// query made from now on: the present, or the start of the oldest change
+// still running.
+func (c *stateChanges) settledAt() time.Time {
+	t := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, start := range c.started {
+		if start.Before(t) {
+			t = start
+		}
+	}
+	return t
+}
 
 // listItems answers GET /api/items?scope=all|saved|group|feed&id=…&unread=1
 // &order=oldest|newest&after=<cursor>&limit=…
@@ -76,7 +122,10 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 		sq.After = &c
 	}
 
-	loadedAt := time.Now()
+	// The page is also where syncing changes starts from (see stateChanges).
+	// While a change is running this is slightly in the past, which errs on
+	// the safe side for "mark all as read" too.
+	loadedAt := s.changing.settledAt()
 	rows, err := s.q.ItemStream(r.Context(), sq)
 	if err != nil {
 		s.serverError(w, r, err)
@@ -117,6 +166,7 @@ func (s *Server) setItemState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	defer s.changing.begin()()
 	if req.Read != nil {
 		mark := s.q.MarkUnread
 		if *req.Read {
@@ -151,6 +201,7 @@ func (s *Server) markAllRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	defer s.changing.begin()()
 	var err error
 	switch {
 	case req.Scope == "all":
@@ -190,11 +241,12 @@ func (s *Server) itemChanges(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// A small overlap covers clock differences between this server and
-		// the database; a change reported twice is harmless.
+		// the database, which stamps the changes; a change reported twice
+		// is harmless. Changes still being made are covered by loadedAt.
 		from = store.Cursor{Time: since.Add(-2 * time.Second)}
 	}
 
-	loadedAt := time.Now()
+	loadedAt := s.changing.settledAt()
 	rows, err := s.q.ItemChanges(r.Context(), store.ItemChangesParams{
 		AfterTime: from.Time,
 		AfterID:   from.ID,

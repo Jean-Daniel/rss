@@ -36,6 +36,9 @@ const (
 	Retention = 10 * 7 * 24 * time.Hour
 	// cleanupEvery is how often expired items are deleted.
 	cleanupEvery = time.Hour
+	// forgetAfter is how long a feed must have stopped listing an expired
+	// entry before it is forgotten (see the KnownGUIDs query).
+	forgetAfter = 30 * 24 * time.Hour
 	// freeMemoryAfter is how much feed data a run must parse before the
 	// memory it used is handed back to the system.
 	freeMemoryAfter = 1 << 20
@@ -156,25 +159,22 @@ func (r *Refresher) refreshDue(ctx context.Context) {
 	start := r.now()
 	var stats runStats
 	var mu sync.Mutex
-	done := make(map[int64]bool)
+	// The feeds taken in this run. A feed whose outcome could not be saved
+	// stays due: it is not taken twice, and does not hide the feeds after it.
+	// (Never nil: a nil list would be sent as NULL and match no feed.)
+	taken := []int64{}
 
 	for ctx.Err() == nil {
-		due, err := r.q.DueFeeds(ctx, batchSize)
+		batch, err := r.q.DueFeeds(ctx, store.DueFeedsParams{Skip: taken, MaxRows: batchSize})
 		if err != nil {
 			r.warn(ctx, "list due feeds", "err", err)
 			return
 		}
-		// A feed whose update could not be saved stays due: never take it
-		// twice in one run.
-		batch := due[:0]
-		for _, f := range due {
-			if !done[f.ID] {
-				done[f.ID] = true
-				batch = append(batch, f)
-			}
-		}
 		if len(batch) == 0 {
 			break
+		}
+		for _, f := range batch {
+			taken = append(taken, f.ID)
 		}
 
 		var wg sync.WaitGroup
@@ -233,7 +233,7 @@ func (r *Refresher) refreshFeed(parent context.Context, f store.DueFeedsRow) fee
 	feedURL := content.ParseHTTP(res.finalURL)
 	if res.notModified {
 		if err := r.q.FeedNotModified(parent, store.FeedNotModifiedParams{ID: f.ID, NextFetchAt: r.nextFetch()}); err != nil {
-			r.warn(parent, "save feed", "feed", f.ID, "err", err)
+			return r.notSaved(parent, f, err, feedResult{})
 		}
 		r.checkFavicon(ctx, f, siteOf(f.SiteUrl, "", feedURL))
 		return feedResult{notModified: true}
@@ -265,10 +265,20 @@ func (r *Refresher) refreshFeed(parent context.Context, f store.DueFeedsRow) fee
 		NextFetchAt:  r.nextFetch(),
 	})
 	if err != nil {
-		r.warn(parent, "save feed", "feed", f.ID, "err", err)
+		return r.notSaved(parent, f, err, feedResult{newItems: added, bytes: res.size})
 	}
 	r.checkFavicon(ctx, f, siteOf(f.SiteUrl, siteURL, feedURL))
 	return feedResult{newItems: added, bytes: res.size}
+}
+
+// notSaved handles a fetch that worked but whose outcome could not be saved.
+// Left alone, the feed would stay due and be fetched again every minute, with
+// nothing to show for it: it is recorded as a failure instead, which waits
+// longer after each attempt and shows in the feed list.
+func (r *Refresher) notSaved(ctx context.Context, f store.DueFeedsRow, err error, res feedResult) feedResult {
+	r.warn(ctx, "save feed", "feed", f.ID, "err", err)
+	res.failed = r.failed(ctx, f, fmt.Errorf("The refresh could not be saved: %w", err)).failed
+	return res
 }
 
 // failed records a failed refresh and schedules the next attempt.
@@ -293,13 +303,19 @@ func (r *Refresher) failed(ctx context.Context, f store.DueFeedsRow, err error) 
 // storeItems inserts the items the feed has not brought before, in a single
 // round trip, and returns how many were new. Only those are cleaned.
 func (r *Refresher) storeItems(ctx context.Context, feedID int64, items []newItem) (int, error) {
-	// Run even for an empty feed: it also forgets the expired entries the
-	// feed no longer lists.
+	// Run even for an empty feed: it also keeps track of the expired entries
+	// the feed no longer lists.
 	guids := make([]string, len(items))
 	for i, it := range items {
 		guids[i] = it.guid
 	}
-	existing, err := r.q.KnownGUIDs(ctx, store.KnownGUIDsParams{FeedID: feedID, Guids: guids})
+	now := r.now()
+	existing, err := r.q.KnownGUIDs(ctx, store.KnownGUIDsParams{
+		FeedID:       feedID,
+		Guids:        guids,
+		SeenAt:       now,
+		ForgetBefore: now.Add(-forgetAfter),
+	})
 	if err != nil {
 		return 0, err
 	}

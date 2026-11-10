@@ -36,6 +36,7 @@ type Server struct {
 	refresher Refresher
 	log       *slog.Logger
 	static    http.Handler
+	changing  stateChanges
 }
 
 // New builds the server. webFiles holds the built front end; it is nil in

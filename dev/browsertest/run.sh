@@ -1,7 +1,8 @@
 #!/bin/sh
 # Checks the installed-app behavior in a real (headless) Chromium: the service
-# worker (offline start, updates), installability, the install button and the
-# phone gestures. It builds two versions of the app and runs them in
+# worker (offline start, updates), installability, the install button, the
+# phone gestures, and reading while the server has problems. It builds two
+# versions of the app and runs them in
 # throwaway podman containers, behind nginx as in production, with the fake
 # sample data (dev/fever-sample.sql). Nothing else is touched.
 #

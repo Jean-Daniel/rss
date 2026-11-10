@@ -4,6 +4,12 @@
 // The import replaces all v2 feeds, groups, items and favicons in a single
 // transaction, keeping Fever's ids, so it can be run again at any time while
 // the old app is still in use. The password and sessions are left alone.
+//
+// The v2 tables are emptied with TRUNCATE, which locks them until the import
+// commits: a running v2 server answers nothing that reads feeds or items
+// meanwhile (requests wait, then show the new data). That is the cheapest way
+// to replace everything on a small server, and nobody should be reading a
+// list that is being replaced.
 package importer
 
 import (
@@ -92,6 +98,10 @@ func Run(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger, opts Options
 	}
 	defer tx.Rollback(ctx)
 
+	// Locks the v2 tables until the commit (see the package comment).
+	if opts.Replace {
+		log.Info("replacing the v2 data: a running v2 server waits until the import is finished")
+	}
 	if _, err := tx.Exec(ctx, `TRUNCATE items, expired_items, feed_groups, feeds, groups, favicons`); err != nil {
 		return st, err
 	}
@@ -201,10 +211,12 @@ func Run(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger, opts Options
 
 	// Items. Items without a uid fall back to their link; duplicates within a
 	// feed (same guid once Fever's checksums are converted) are collapsed.
-	// Rows come saved first within each feed, so a saved copy always wins.
+	// Rows come feed by feed, saved first within each feed, so a saved copy
+	// always wins and only one feed's guids are remembered at a time.
 	// Fever has no "saved on" date, so the item's arrival time is used.
 	started := time.Now()
-	seen := make(map[string]bool) // feed id + guid, after feverGUID
+	var seenFeed int64
+	seen := make(map[string]bool) // the guids of seenFeed so far, after feverGUID
 	err = copyRows(ctx, src, tx, "items",
 		[]string{"id", "feed_id", "guid", "url", "title", "author", "content",
 			"published_at", "added_at", "read_at", "saved_at", "state_changed_at"},
@@ -225,11 +237,14 @@ func Run(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger, opts Options
 				return nil, err
 			}
 			guid = feverGUID(guid, link)
-			key := strconv.FormatInt(feedID, 10) + "\x00" + guid
-			if seen[key] {
+			if feedID != seenFeed {
+				seenFeed = feedID
+				clear(seen)
+			}
+			if seen[guid] {
 				return nil, nil
 			}
-			seen[key] = true
+			seen[guid] = true
 			base := link
 			if base == "" {
 				base = siteURL

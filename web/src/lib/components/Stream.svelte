@@ -2,12 +2,14 @@
 	import { onMount, untrack } from 'svelte';
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { api } from '#lib/api/client.ts';
+	import { api, ApiError } from '#lib/api/client.ts';
 	import type { Item, ItemChanges, ItemPage, Subscriptions } from '#lib/api/types.ts';
 	import { clock, onResume } from '#lib/foreground.svelte.ts';
-	import { itemState, withLocalCounts } from '#lib/item-state.svelte.ts';
+	import { itemState } from '#lib/item-state.svelte.ts';
+	import { toLogin } from '#lib/navigation.ts';
 	import { setShowReadPref } from '#lib/prefs.ts';
 	import { itemsURL, type StreamData } from '#lib/stream.ts';
+	import { shownSubscriptions } from '#lib/subscriptions.ts';
 	import { phone } from '#lib/ui.svelte.ts';
 	import ItemView from './ItemView.svelte';
 
@@ -26,16 +28,19 @@
 	// arrived by then, including items shown by later pages.
 	let shownAt = initial.page.loadedAt;
 
-	const counted = $derived(withLocalCounts(subs, itemState.counts));
-	const feedsById = $derived(new Map(counted.feeds.map((f) => [f.id, f])));
+	// The feeds as loaded, for the items' titles and icons: they only change
+	// when the subscriptions are reloaded. The unread count comes from the
+	// subscriptions as the reader shows them, which change with every read.
+	const feedsById = $derived(new Map(subs.feeds.map((f) => [f.id, f])));
+	const shown = shownSubscriptions();
 	const unread = $derived.by(() => {
 		switch (scope.kind) {
 			case 'all':
-				return counted.totalUnread;
+				return shown().totalUnread;
 			case 'group':
-				return counted.groups.find((g) => g.id === scope.id)?.unread ?? 0;
+				return shown().groups.find((g) => g.id === scope.id)?.unread ?? 0;
 			case 'feed':
-				return feedsById.get(scope.id)?.unread ?? 0;
+				return shown().feeds.find((f) => f.id === scope.id)?.unread ?? 0;
 			default:
 				return 0;
 		}
@@ -164,6 +169,10 @@
 		const label = unread === 1 ? '1 item' : `${unread} items`;
 		if (!confirm(`Mark ${label} as read?`)) return;
 		try {
+			// Changes made here that are not sent yet go first. Sent after
+			// this, they would undo part of it: an item marked unread a
+			// moment ago would stay unread.
+			await itemState.flush();
 			await api('/api/items/read-all', {
 				method: 'POST',
 				body: JSON.stringify({
@@ -172,10 +181,15 @@
 					before: shownAt
 				})
 			});
-			await Promise.all([itemState.reloadCounts(), invalidate('app:stream')]);
 		} catch (err) {
+			if (err instanceof ApiError && err.status === 401) {
+				void toLogin();
+				return;
+			}
 			alert(`Could not mark the items as read: ${err instanceof Error ? err.message : err}`);
+			return;
 		}
+		await Promise.all([itemState.reloadCountsQuietly(), invalidate('app:stream')]);
 	}
 
 	function showRead(show: boolean) {
@@ -263,7 +277,7 @@
 		</div>
 	{:else}
 		<!-- Room to scroll the last items past the top, so they get marked read too. -->
-		<div class="end" class:room={autoRead && scope.kind !== 'saved'}>
+		<div class="end" class:room={autoRead}>
 			<p>{scope.kind === 'saved' ? 'No more saved items.' : 'You have reached the end.'}</p>
 		</div>
 	{/if}

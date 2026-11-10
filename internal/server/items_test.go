@@ -128,7 +128,8 @@ func TestItemsAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv := httptest.NewServer(New(config.Config{}, pool, log, idleRefresher{}, nil).Handler())
+	server := New(config.Config{}, pool, log, idleRefresher{}, nil)
+	srv := httptest.NewServer(server.Handler())
 	defer srv.Close()
 	jar, _ := cookiejar.New(nil)
 	c := apiClient{t: t, base: srv.URL, http: &http.Client{Jar: jar}}
@@ -228,5 +229,55 @@ func TestItemsAPI(t *testing.T) {
 	sort.Slice(changed, func(i, j int) bool { return changed[i] < changed[j] })
 	if !sameIDs(changed, []int64{1, 2, 3, 6, 7}) {
 		t.Errorf("changes = %v, want [1 2 3 6 7]", changed)
+	}
+
+	// While a state change is running, answers are dated from its start: the
+	// next sync then asks for it again, by which time it is committed.
+	loadedAt := func() (page, changes time.Time) {
+		t.Helper()
+		status, body := c.do("GET", "/api/items/changes?since="+url.QueryEscape(time.Now().Format(time.RFC3339Nano)), nil)
+		if status != http.StatusOK {
+			t.Fatalf("changes: %d %s", status, body)
+		}
+		var res apitypes.ItemChanges
+		if err := json.Unmarshal(body, &res); err != nil {
+			t.Fatal(err)
+		}
+		return c.items("limit=1").LoadedAt, res.LoadedAt
+	}
+	done := server.changing.begin()
+	running := time.Now()
+	if page, changes := loadedAt(); page.After(running) || changes.After(running) {
+		t.Errorf("during a state change: loaded at %v and %v, want no later than its start %v", page, changes, running)
+	}
+	done()
+	if page, changes := loadedAt(); page.Before(running) || changes.Before(running) {
+		t.Errorf("after the state change: loaded at %v and %v, want after %v", page, changes, running)
+	}
+}
+
+func TestStateChanges(t *testing.T) {
+	var c stateChanges
+	before := time.Now()
+	if got := c.settledAt(); got.Before(before) {
+		t.Errorf("nothing running: settled at %v, want the present (%v or later)", got, before)
+	}
+	first := c.begin()
+	afterFirst := time.Now()
+	second := c.begin()
+	if got := c.settledAt(); got.Before(before) || got.After(afterFirst) {
+		t.Errorf("two running: settled at %v, want the start of the first (%v to %v)", got, before, afterFirst)
+	}
+	first()
+	if got := c.settledAt(); got.Before(afterFirst) {
+		t.Errorf("first done: settled at %v, want the start of the second (%v or later)", got, afterFirst)
+	}
+	second()
+	afterBoth := time.Now()
+	if got := c.settledAt(); got.Before(afterBoth) {
+		t.Errorf("both done: settled at %v, want the present (%v or later)", got, afterBoth)
+	}
+	if len(c.started) != 0 {
+		t.Errorf("%d requests still recorded", len(c.started))
 	}
 }

@@ -1,6 +1,7 @@
 // Command browsertest drives a headless Chromium against the app to check
 // what unit tests cannot: the service worker, installability, the install
-// button and the phone gestures. run.sh sets up the containers it expects.
+// button, the phone gestures, and reading while the server has problems.
+// run.sh sets up the containers it expects.
 package main
 
 import (
@@ -44,6 +45,38 @@ const (
 	unreachable  = `document.body.innerText.includes('The server cannot be reached.')`
 	drawerOpen   = `document.querySelector('.shell').classList.contains('drawer-open')`
 	installMatch = `[...document.querySelectorAll('button')].find(b => b.textContent.includes('Install app'))`
+	itemsShown   = readerShown + ` && document.querySelectorAll('.item').length > 0`
+	firstSave    = `document.querySelector('.item .action.save')`
+	firstToggle  = `document.querySelector('.item .action.read-toggle')`
+	savedCount   = `(document.querySelector('a[href="/saved"] .count')?.textContent.trim() ?? '0')`
+	allSent      = `localStorage.getItem('fever.pendingReads') === null`
+	noAlerts     = `window.__test.alerts.length === 0`
+
+	// Runs before the app's own scripts, in every page loaded after it is
+	// added. It records the API calls, and can make /api/subscriptions fail
+	// or report a refresh in progress. An alert or a confirmation would
+	// block the page: alerts are recorded, confirmations accepted.
+	instrument = `(() => {
+		const real = window.fetch;
+		const t = (window.__test = { calls: [], alerts: [], fail: false, refreshing: false });
+		window.fetch = async (input, init) => {
+			const request = input instanceof Request ? input : null;
+			const url = new URL(request ? request.url : String(input), location.href);
+			if (url.pathname.startsWith('/api/')) {
+				t.calls.push((init?.method ?? request?.method ?? 'GET') + ' ' + url.pathname);
+			}
+			if (url.pathname !== '/api/subscriptions') return real(input, init);
+			if (t.fail) return new Response('down', { status: 503 });
+			const res = await real(input, init);
+			if (!t.refreshing || !res.ok) return res;
+			return new Response(JSON.stringify({ ...(await res.json()), refreshing: true }), {
+				status: res.status,
+				headers: { 'Content-Type': 'application/json' }
+			});
+		};
+		window.alert = (message) => void t.alerts.push(String(message));
+		window.confirm = () => true;
+	})()`
 )
 
 var failures int
@@ -138,7 +171,7 @@ func main() {
 	defer cancel()
 	ctx, cancel := chromedp.NewContext(alloc)
 	defer cancel()
-	ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
+	ctx, cancel = context.WithTimeout(ctx, 8*time.Minute)
 	defer cancel()
 
 	firstVisit(ctx)
@@ -147,6 +180,7 @@ func main() {
 	update(ctx)
 	phone(ctx)
 	installButton(ctx)
+	reading(ctx, strings.TrimSpace(string(secret)))
 
 	if failures > 0 {
 		fmt.Printf("%d check(s) failed\n", failures)
@@ -317,4 +351,120 @@ func installButton(ctx context.Context) {
 	eval[bool](ctx, installMatch+`.click(), true`)
 	check(waitFor(ctx, `window.__prompted === true`, 2*time.Second), "button opens the browser's install dialog")
 	check(waitFor(ctx, `!`+installMatch, 2*time.Second), "button hidden afterwards")
+}
+
+// Reading while the server has problems: a counts reload that fails, a
+// refresh in progress, "mark all as read" right after a change, and a
+// session that has ended.
+func reading(ctx context.Context, secret string) {
+	_, err := chromedp.Call(ctx, emulation.ClearDeviceMetricsOverride, cdp.Empty{})
+	must(err)
+	_, err = chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{Enabled: false})
+	must(err)
+	_, err = chromedp.Call(ctx, page.AddScriptToEvaluateOnNewDocument, page.AddScriptToEvaluateOnNewDocumentParams{Source: instrument})
+	must(err)
+
+	do := func(js string) { eval[bool](ctx, js+`, true`) }
+	forgetCalls := func() { do(`window.__test.calls.length = 0`) }
+	calls := func(call string) int {
+		return eval[int](ctx, fmt.Sprintf(`window.__test.calls.filter(c => c === %q).length`, call))
+	}
+	attr := func(element, name string) string {
+		return eval[string](ctx, fmt.Sprintf(`%s.getAttribute(%q)`, element, name))
+	}
+
+	// Lists that include read items, so the checks do not depend on what the
+	// steps before this one left unread.
+	do(`localStorage.setItem('fever.showRead', '1')`)
+	navigate(ctx, base+"/")
+	check(waitFor(ctx, itemsShown, 10*time.Second), "desktop layout: reader shown, with items")
+
+	// Saving an item reloads the counts. That reload fails.
+	before := eval[string](ctx, savedCount)
+	saved := attr(firstSave, "aria-pressed")
+	do(`window.__test.fail = true`)
+	forgetCalls()
+	do(firstSave + `.click()`)
+	check(waitFor(ctx, `window.__test.calls.includes('GET /api/subscriptions')`, 5*time.Second), "saving an item reloads the counts")
+	time.Sleep(500 * time.Millisecond) // time for an error page to replace the reader
+	check(eval[bool](ctx, itemsShown), "counts reload fails: the reader stays on screen")
+	check(attr(firstSave, "aria-pressed") != saved, "counts reload fails: the item stays saved")
+	check(eval[bool](ctx, noAlerts), "counts reload fails: no error message")
+	do(`window.__test.fail = false`)
+	check(waitFor(ctx, fmt.Sprintf(`%s !== %q`, savedCount, before), 25*time.Second), "server answers again: the counts are reloaded without being asked")
+
+	// A refresh is running on the server, as far as the page can tell: the
+	// counts are reloaded every 2 seconds, also while items are being read.
+	do(`window.__test.refreshing = true`)
+	do(firstSave + `.click()`)
+	check(waitFor(ctx, fmt.Sprintf(`%s === %q`, savedCount, before), 5*time.Second), "item no longer saved, counts reloaded")
+	forgetCalls()
+	start := time.Now()
+	for range 30 { // an even number: the item ends as it started
+		do(firstToggle + `.click()`)
+		time.Sleep(300 * time.Millisecond)
+	}
+	reloads := calls("GET /api/subscriptions")
+	check(reloads >= 3, "refresh in progress: the counts keep being reloaded while items are read (%d reloads in %v)",
+		reloads, time.Since(start).Round(time.Second))
+	do(`window.__test.refreshing = false`)
+	time.Sleep(3 * time.Second) // the next reload says the refresh is over
+	forgetCalls()
+	time.Sleep(5 * time.Second)
+	reloads = calls("GET /api/subscriptions")
+	check(reloads <= 1, "refresh over: the reloading stops (%d reloads in 5 s)", reloads)
+
+	// "Mark all as read" right after an item was marked unread: the change
+	// must reach the server first, or it would undo part of it afterwards.
+	if attr(firstToggle, "aria-pressed") == "true" { // unread
+		do(firstToggle + `.click()`)
+	}
+	check(waitFor(ctx, allSent, 6*time.Second), "earlier changes sent")
+	forgetCalls()
+	enabled := eval[bool](ctx, `(async () => {
+		`+firstToggle+`.click();
+		await new Promise(done => setTimeout(done, 100));
+		const all = document.querySelector('.mark-all');
+		const enabled = !all.disabled;
+		all.click();
+		return enabled;
+	})()`)
+	check(enabled, "item marked unread: Mark all as read is available")
+	check(waitFor(ctx, `window.__test.calls.includes('POST /api/items/read-all')`, 5*time.Second), "Mark all as read: sent")
+	order := eval[[]string](ctx, `window.__test.calls.filter(c => c.startsWith('POST /api/items/'))`)
+	check(len(order) >= 2 && order[0] == "POST /api/items/state" && order[1] == "POST /api/items/read-all",
+		"Mark all as read: the change made just before goes first (%v)", order)
+	time.Sleep(3 * time.Second) // a change held back would have been sent by now
+	unread := eval[int](ctx, `fetch('/api/subscriptions').then(r => r.json()).then(s => s.totalUnread)`)
+	check(unread == 0, "Mark all as read: nothing left unread on the server (%d)", unread)
+	check(eval[bool](ctx, allSent), "Mark all as read: nothing left to send")
+	check(waitFor(ctx, `!document.querySelector('a[href="/"] .count') && `+firstToggle+`.getAttribute('aria-pressed') === 'false'`, 3*time.Second),
+		"Mark all as read: no unread count and no unread item on screen")
+	check(eval[bool](ctx, noAlerts), "Mark all as read: no error message")
+
+	// The session ends while a list is open: the feed of the first item,
+	// which has items whatever the sample data's dates have let expire.
+	list := eval[string](ctx, `document.querySelector('.item a.feed')?.getAttribute('href') ?? ''`)
+	check(strings.HasPrefix(list, "/feeds/"), "first item links to its feed (%q)", list)
+	navigate(ctx, base+list)
+	check(waitFor(ctx, itemsShown, 10*time.Second), "%s shown, with items", list)
+	status := eval[int](ctx, `fetch('/api/session', { method: 'DELETE' }).then(r => r.status)`)
+	check(status == 204, "session ended behind the page's back (%d)", status)
+	forgetCalls()
+	do(firstToggle + `.click()`)
+	check(waitFor(ctx, fmt.Sprintf(`location.pathname === '/login' && new URLSearchParams(location.search).get('next') === %q`, list), 6*time.Second),
+		"session ended: sending a change opens the login page, to come back to %s", list)
+	time.Sleep(7 * time.Second) // a second attempt would have been made by now
+	attempts := calls("POST /api/items/state")
+	check(attempts == 1, "session ended: the change is not sent again before logging in (%d attempts)", attempts)
+	check(!eval[bool](ctx, allSent), "session ended: the change is kept")
+	do(fmt.Sprintf(`(() => {
+		const field = document.querySelector('#password');
+		field.value = %q;
+		field.dispatchEvent(new Event('input', { bubbles: true }));
+		field.form.requestSubmit();
+	})()`, secret))
+	check(waitFor(ctx, fmt.Sprintf(`location.pathname === %q && %s`, list, itemsShown), 10*time.Second), "logged in again: back on %s", list)
+	check(waitFor(ctx, allSent, 6*time.Second), "logged in again: the change kept meanwhile is sent")
+	check(eval[bool](ctx, noAlerts), "session ended: no error message")
 }

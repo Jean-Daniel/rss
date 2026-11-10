@@ -164,6 +164,27 @@ func TestFetch(t *testing.T) {
 	}
 }
 
+// A validator that cannot be stored, or sent back, is dropped: the feed is
+// then fetched in full next time, instead of failing to be saved.
+func TestValidator(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{`"v1"`, `"v1"`},
+		{`W/"abc"`, `W/"abc"`},
+		{"Mon, 02 Nov 2026 10:00:00 GMT", "Mon, 02 Nov 2026 10:00:00 GMT"},
+		{"", ""},
+		{strings.Repeat("x", maxValidatorBytes), strings.Repeat("x", maxValidatorBytes)},
+		{strings.Repeat("x", maxValidatorBytes+1), ""},
+		{"\"caf\xe9\"", ""}, // not UTF-8: PostgreSQL refuses it
+		{"\"a\x00b\"", ""},  // PostgreSQL refuses NUL
+		{"\"a\r\nb\"", ""},  // not a valid header value
+		{"\"a\x7fb\"", ""},
+	} {
+		if got := validator(tc.in); got != tc.want {
+			t.Errorf("validator(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestFindFavicon(t *testing.T) {
 	png := "\x89PNG\r\n\x1a\n" + strings.Repeat("x", 32)
 	mux := http.NewServeMux()

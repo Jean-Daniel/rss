@@ -44,7 +44,9 @@ fever healthcheck    used by the container health check
 favicons from the `fever_*` tables. It keeps Fever's ids and runs in a single
 transaction. With `--replace` it wipes v2's feeds, groups, items and favicons first,
 so it can be run again while you keep using the old app. Your password and sessions
-are not touched.
+are not touched. The wiped tables stay locked until the import is finished: a running
+v2 server answers nothing that needs feeds or items meanwhile (pages wait, then show
+the new data).
 
 What the import changes:
 - Item HTML is cleaned: scripts, styles, event handlers and `javascript:` links are
@@ -59,14 +61,20 @@ schedules each one again `REFRESH_INTERVAL` later (with a little random spread).
 sends the feed's `ETag`/`Last-Modified` back, so unchanged feeds cost a short "not
 modified" answer. The refresh button in the sidebar makes every feed due at once.
 
-- **Failures:** a failing feed is retried after 30 minutes, then 1, 2, 4… hours, up to
-  a day, or later if the site sends `Retry-After`. The message is shown on the feed.
+- **Failures:** a failing feed is retried after twice the refresh interval, and the
+  wait doubles with each failure in a row: 30 minutes, then 1, 2, 4, 8 and 16 hours
+  with the default interval. A site's `Retry-After` is respected when it asks for
+  longer, and the wait is never more than a day. The message is shown on the feed.
 - **Retention:** like Fever, items are kept for 10 weeks unless saved, and expired
   items are deleted every hour. Older entries that a feed still lists are not added
-  again: the server remembers the IDs of expired items for as long as their feed
-  lists them, which also covers entries without a date.
+  again: the server remembers the IDs of expired items while their feed lists them,
+  which also covers entries without a date. They are forgotten once the feed has
+  left them out for 30 days, so a feed that serves an empty or partial document
+  for a while does not bring its old entries back as unread.
 - **Failed saves:** if new items cannot be stored, the feed is marked as failed and
-  keeps its previous `ETag`, so the next attempt downloads it again.
+  keeps its previous `ETag`, so the next attempt downloads it again. A refresh
+  whose outcome cannot be recorded is a failure too, retried with the same growing
+  waits rather than every minute.
 - **Favicons:** for feeds without one, the server looks at the site's home page for
   icon links, then `/favicon.ico`, at most once a week per feed.
 - **Safety:** feeds cannot point the server at loopback or private addresses (such as
@@ -85,10 +93,13 @@ items are listed newest first.
   The end of a list leaves a screen of room so the last items can scroll past too.
 - **No lost reads:** changes are kept in the browser's storage and sent in batches
   every 2 seconds, and right away when the page is hidden or closed; anything not
-  confirmed is sent again later.
+  confirmed is sent again later. If the session has ended, the login page opens,
+  and they are sent after logging in.
 - **Other devices:** read and saved changes made elsewhere are picked up when the app
   comes back to the foreground, and every 5 minutes.
 - **Mark all as read** only covers items that had arrived when the list was shown.
+  Changes not sent yet are sent first, so an item marked unread a moment before
+  ends up read like the others.
 - Feed HTML is sanitized on the server, and a Content Security Policy blocks any
   script that is not the app's own.
 
@@ -154,7 +165,9 @@ service worker types), `make generate` (regenerates `internal/store` from the SQ
 
 `make browser-test` checks what only a browser can: the service worker (offline
 start, server down behind nginx, slow server, updates), installability, the install
-button and the phone gestures. It builds two versions of the app and runs them with
+button, the phone gestures, and reading while things go wrong (counts that cannot be
+reloaded, a refresh in progress, "mark all as read" right after a change, a session
+that has ended). It builds two versions of the app and runs them with
 nginx, the fake dataset and a headless Chromium in throwaway podman containers,
 removed afterwards. The checks are in `dev/browsertest` (a separate Go module, so
 the server does not depend on chromedp).

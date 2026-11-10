@@ -1,6 +1,7 @@
 package content
 
 import (
+	"bytes"
 	"html"
 	"net/http"
 	"regexp"
@@ -14,7 +15,7 @@ import (
 var (
 	scriptOrStyle = regexp.MustCompile(`(?is)<(?:script|style)\b[^>]*>.*?</(?:script|style)\s*>`)
 	blockMarkup   = regexp.MustCompile(`(?i)</?(?:br|div|h[1-6]|li|p|tr)(?:\s[^>]*)?/?>`)
-	inlineMarkup  = regexp.MustCompile(`(?i)<!--.*?-->|</?(?:a|abbr|acronym|b|big|cite|code|del|dfn|em|font|i|img|ins|kbd|mark|nobr|q|s|samp|small|span|strike|strong|sub|sup|time|tt|u|var|wbr)(?:\s[^>]*)?/?>`)
+	inlineMarkup  = regexp.MustCompile(`(?is)<!--.*?-->|</?(?:a|abbr|acronym|b|big|cite|code|del|dfn|em|font|i|img|ins|kbd|mark|nobr|q|s|samp|small|span|strike|strong|sub|sup|time|tt|u|var|wbr)(?:\s[^>]*)?/?>`)
 )
 
 // Text turns a title or author field, which feeds sometimes fill with markup
@@ -47,9 +48,45 @@ func SniffImage(data []byte) string {
 	if t := http.DetectContentType(data); strings.HasPrefix(t, "image/") {
 		return t
 	}
-	head := strings.ToLower(string(data[:min(len(data), 1024)]))
-	if strings.Contains(head, "<svg") {
+	if isSVG(data) {
 		return "image/svg+xml"
 	}
 	return ""
+}
+
+// isSVG reports whether data is an SVG document: its first element, after an
+// optional XML declaration, comments and a doctype, is <svg>. A web page that
+// merely contains an <svg> element (a site's "not found" page, say) is not.
+func isSVG(data []byte) bool {
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")) // byte order mark
+	for {
+		data = bytes.TrimLeft(data, " \t\r\n")
+		var end string
+		switch {
+		case bytes.HasPrefix(data, []byte("<?")):
+			end = "?>"
+		case bytes.HasPrefix(data, []byte("<!--")):
+			end = "-->"
+		case len(data) >= 9 && bytes.EqualFold(data[:9], []byte("<!DOCTYPE")):
+			end = ">"
+			// A doctype may declare entities between brackets.
+			if i := bytes.IndexAny(data, "[>"); i >= 0 && data[i] == '[' {
+				end = "]"
+			}
+		default:
+			rest, found := bytes.CutPrefix(data, []byte("<svg"))
+			return found && len(rest) > 0 && strings.IndexByte(" \t\r\n>/", rest[0]) >= 0
+		}
+		i := bytes.Index(data, []byte(end))
+		if i < 0 {
+			return false
+		}
+		data = data[i+len(end):]
+		if end == "]" {
+			if i = bytes.IndexByte(data, '>'); i < 0 {
+				return false
+			}
+			data = data[i+1:]
+		}
+	}
 }

@@ -52,7 +52,7 @@ export async function api<T>(
 }
 
 /** The parts of a load event loadApi needs. */
-interface LoadContext {
+export interface LoadContext {
 	fetch: typeof fetch;
 	url: URL;
 	untrack<T>(fn: () => T): T;

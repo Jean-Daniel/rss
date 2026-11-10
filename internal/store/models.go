@@ -15,9 +15,10 @@ type Device struct {
 }
 
 type ExpiredItem struct {
-	FeedID    int64
-	Guid      string
-	ExpiredAt time.Time
+	FeedID       int64
+	Guid         string
+	ExpiredAt    time.Time
+	MissingSince *time.Time
 }
 
 type Favicon struct {

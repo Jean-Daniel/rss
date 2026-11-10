@@ -155,7 +155,14 @@ func runSetPassword(ctx context.Context, log *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		q := store.New(pool)
+		// All or nothing: a new password that left the old sessions open
+		// would not lock anyone out.
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback(ctx)
+		q := store.New(tx)
 		if err := q.SetPasswordHash(ctx, &hash); err != nil {
 			return err
 		}
@@ -165,6 +172,9 @@ func runSetPassword(ctx context.Context, log *slog.Logger) error {
 			return err
 		}
 		if err := q.DeleteAllDevices(ctx); err != nil {
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
 			return err
 		}
 		fmt.Println("Password updated. All devices have been signed out.")

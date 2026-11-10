@@ -1,18 +1,36 @@
+-- DueFeeds returns the next feeds to fetch. skip lists the feeds a run has
+-- already taken: one whose outcome could not be saved stays due, and must
+-- neither be fetched again right away nor keep the feeds after it waiting.
 -- name: DueFeeds :many
 SELECT id, url, site_url, favicon_id, favicon_checked_at, auth_username, auth_password,
        etag, last_modified, error_count
 FROM feeds
-WHERE next_fetch_at <= now()
+WHERE next_fetch_at <= now() AND NOT (id = ANY(@skip::bigint[]))
 ORDER BY next_fetch_at, id
-LIMIT $1;
+LIMIT @max_rows;
 
 -- KnownGUIDs returns which of the guids a feed lists right now it has
--- already seen: stored items, and expired ones it still lists. Expired items
--- the feed no longer lists are forgotten, since they cannot come back.
+-- already seen: stored items, and expired ones it still lists.
+--
+-- It also keeps track of the expired entries the feed stopped listing. They
+-- are forgotten only once they have stayed away since before forget_before:
+-- a feed that serves an empty or partial document for a while, then lists
+-- its old entries again, does not bring them back as unread. Rows are written
+-- only when an entry disappears or comes back, not on every fetch. (The three
+-- changes touch different rows: listed, newly missing, missing for long.)
 -- name: KnownGUIDs :many
-WITH forgotten AS (
+WITH listed_again AS (
+    UPDATE expired_items AS back SET missing_since = NULL
+    WHERE back.feed_id = @feed_id AND back.missing_since IS NOT NULL
+      AND back.guid = ANY(@guids::text[])
+), missing AS (
+    UPDATE expired_items AS away SET missing_since = @seen_at::timestamptz
+    WHERE away.feed_id = @feed_id AND away.missing_since IS NULL
+      AND NOT (away.guid = ANY(@guids::text[]))
+), forgotten AS (
     DELETE FROM expired_items AS gone
-    WHERE gone.feed_id = @feed_id AND NOT (gone.guid = ANY(@guids::text[]))
+    WHERE gone.feed_id = @feed_id AND gone.missing_since < @forget_before::timestamptz
+      AND NOT (gone.guid = ANY(@guids::text[]))
 )
 SELECT i.guid FROM items AS i WHERE i.feed_id = @feed_id AND i.guid = ANY(@guids::text[])
 UNION ALL

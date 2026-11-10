@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mmcdole/gofeed"
 
@@ -19,6 +20,9 @@ import (
 // maxFeedBytes caps a feed document. Real feeds are far smaller; this only
 // protects a small server from a runaway response.
 const maxFeedBytes = 8 << 20
+
+// maxValidatorBytes caps a stored ETag or Last-Modified value.
+const maxValidatorBytes = 1024
 
 type fetchResult struct {
 	notModified  bool
@@ -78,8 +82,8 @@ func fetch(ctx context.Context, client *http.Client, f store.DueFeedsRow) (*fetc
 	defer res.Body.Close()
 
 	result := &fetchResult{
-		etag:         res.Header.Get("ETag"),
-		lastModified: res.Header.Get("Last-Modified"),
+		etag:         validator(res.Header.Get("ETag")),
+		lastModified: validator(res.Header.Get("Last-Modified")),
 		finalURL:     res.Request.URL.String(),
 	}
 	switch {
@@ -107,6 +111,22 @@ func fetch(ctx context.Context, client *http.Client, f store.DueFeedsRow) (*fetc
 	result.feed = feed
 	result.size = len(body)
 	return result, nil
+}
+
+// validator returns an ETag or Last-Modified value that can be stored and
+// sent back as it is. Anything else is dropped, and the feed is downloaded in
+// full next time: the database refuses text that is not UTF-8 or holds a NUL,
+// and a request with control characters in a header cannot be sent.
+func validator(v string) string {
+	if len(v) > maxValidatorBytes || !utf8.ValidString(v) {
+		return ""
+	}
+	for i := 0; i < len(v); i++ {
+		if c := v[i]; c < ' ' && c != '\t' || c == 0x7f {
+			return ""
+		}
+	}
+	return v
 }
 
 func describeNetError(err error) error {

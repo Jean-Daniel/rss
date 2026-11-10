@@ -1,6 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { loadApi } from '#lib/api/client.ts';
-import type { Subscriptions } from '#lib/api/types.ts';
+import { loadSubscriptions } from '#lib/subscriptions.ts';
 import type { LayoutLoad } from './$types';
 
 export const load: LayoutLoad = async (event) => {
@@ -9,5 +8,5 @@ export const load: LayoutLoad = async (event) => {
 	const { unavailable } = await event.parent();
 	if (unavailable) error(unavailable.status, unavailable.message);
 	event.depends('app:subscriptions');
-	return { subscriptions: await loadApi<Subscriptions>(event, '/api/subscriptions') };
+	return { subscriptions: await loadSubscriptions(event) };
 };
