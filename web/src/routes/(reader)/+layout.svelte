@@ -2,6 +2,10 @@
 	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api } from '#lib/api/client.ts';
+	import type { RefreshRequest, UnreadRecent } from '#lib/api/types.ts';
+	import ShortcutsHelp from '#lib/components/ShortcutsHelp.svelte';
+	import { failure } from '#lib/manage.ts';
+	import { handleKey, shortcuts, type AppKeys } from '#lib/shortcuts.svelte.ts';
 	import FeedList from '#lib/components/FeedList.svelte';
 	import { clock, onResume } from '#lib/foreground.svelte.ts';
 	import { install } from '#lib/install.svelte.ts';
@@ -46,12 +50,16 @@
 	let refreshError = $state('');
 	const refreshing = $derived(starting || subs.refreshing);
 
-	async function refreshAll() {
+	/** Every feed, or only a group's or a feed's. */
+	async function refresh(only?: RefreshRequest) {
 		if (refreshing) return;
 		starting = true;
 		refreshError = '';
 		try {
-			await api('/api/refresh', { method: 'POST' });
+			await api('/api/refresh', {
+				method: 'POST',
+				body: only ? JSON.stringify(only) : undefined
+			});
 			await itemState.reloadCounts();
 		} catch (err) {
 			refreshError = err instanceof Error ? err.message : String(err);
@@ -91,8 +99,55 @@
 		await goto('/login', { refreshAll: true });
 	}
 
+	const refreshAll = () => refresh();
+
+	// Keyboard shortcuts: the list on screen handles those that act on items.
+	const app: AppKeys = {
+		go: (path) => void goto(path),
+		// Shift+R: the feed or group shown, in its list or its settings.
+		refresh(shown) {
+			const feed = selection.kind === 'feed' || selection.kind === 'manage' ? selection.feed : null;
+			const group =
+				selection.kind === 'group' || selection.kind === 'manage' ? selection.group : null;
+			if (shown && feed) void refresh({ feedId: feed.id, groupId: null });
+			else if (shown && group) void refresh({ feedId: null, groupId: group.id });
+			else void refresh();
+		},
+		toggleFeeds: () => ui.toggleFeeds(),
+		edit() {
+			if (edit) void goto(edit);
+		},
+		search() {
+			const field = document.querySelector<HTMLInputElement>('input[name="q"]');
+			if (!field) {
+				void goto('/search');
+				return;
+			}
+			field.focus();
+			field.select();
+		},
+		undoReads: () => void undoReads(),
+		closePanels() {
+			const open = ui.drawerOpen || ui.feedsOverlay;
+			ui.closePanels();
+			return open;
+		}
+	};
+
+	// Z: the items read last, on any device, are unread again.
+	async function undoReads() {
+		try {
+			await itemState.flush(); // reads not sent yet count too
+			const res = await api<UnreadRecent>('/api/items/unread-recent', { method: 'POST' });
+			shortcuts.list?.unreadAgain(res.items);
+			await itemState.reloadCountsQuietly();
+		} catch (err) {
+			alert(`Could not mark the items as unread: ${failure(err)}`);
+		}
+	}
+
 	function onkeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') ui.closePanels();
+		if (handleKey(event, app)) event.preventDefault();
 	}
 
 	// The phone's title bar, tapped: back to the first item.
@@ -106,7 +161,9 @@
 	<title>{unread > 0 ? `(${unread}) ` : ''}{title} · Fever</title>
 </svelte:head>
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} onpointerdown={() => (shortcuts.keyboard = false)} />
+
+<ShortcutsHelp />
 
 {#snippet editButton()}
 	{#if edit}

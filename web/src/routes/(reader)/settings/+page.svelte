@@ -3,6 +3,7 @@
 	import { api } from '#lib/api/client.ts';
 	import type { OPMLImport, Preferences } from '#lib/api/types.ts';
 	import FeedIcon from '#lib/components/FeedIcon.svelte';
+	import ShortcutList from '#lib/components/ShortcutList.svelte';
 	import { staleText } from '#lib/feed-status.ts';
 	import { afterSave, failure } from '#lib/manage.ts';
 	import { formatDate } from '#lib/time.ts';
@@ -212,6 +213,12 @@
 	</form>
 </section>
 
+<section class="panel keys">
+	<h2>Keyboard shortcuts</h2>
+	<p class="hint">Press <kbd>?</kbd> anywhere in the reader to see them.</p>
+	<ShortcutList />
+</section>
+
 <section class="panel">
 	<h2>Password</h2>
 	<p class="hint">
@@ -249,6 +256,20 @@
 
 	.import {
 		margin-top: 16px;
+	}
+
+	.keys .hint kbd {
+		padding: 0 4px;
+		border: 1px solid var(--field-line);
+		border-radius: 3px;
+		font: inherit;
+	}
+
+	/* Keyboards are rare on phones. */
+	@media (max-width: 699px) {
+		.keys {
+			display: none;
+		}
 	}
 
 	.import input[type='file'] {

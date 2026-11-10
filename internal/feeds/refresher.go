@@ -128,6 +128,17 @@ func (r *Refresher) RefreshFeed(ctx context.Context, id int64) (bool, error) {
 	return true, nil
 }
 
+// RefreshGroup makes the feeds of a group due and starts refreshing now. It
+// reports false when the group does not exist.
+func (r *Refresher) RefreshGroup(ctx context.Context, id int64) (bool, error) {
+	found, err := r.q.MarkGroupDue(ctx, id)
+	if err != nil || !found {
+		return false, err
+	}
+	r.poke()
+	return true, nil
+}
+
 // Wake starts refreshing the feeds that are due now, such as feeds just
 // added or changed.
 func (r *Refresher) Wake() {

@@ -13,8 +13,8 @@ and mobile, and read state is stored in PostgreSQL.
 
 Status: steps 1 to 6 are done: schema, login, the importer for the old data, the page
 layout, feed refreshing, reading (item lists, mark as read on scroll, saving), the
-phone and installed-app polish, managing feeds, groups and preferences, and search.
-Left for later: keyboard shortcuts and dark mode.
+phone and installed-app polish, managing feeds, groups and preferences, search, and
+Fever's keyboard shortcuts. Left for later: dark mode.
 
 ## Configuration
 
@@ -135,6 +135,36 @@ UPDATE reader.item_search s SET search = reader.search_vector(i.title, i.author,
 FROM reader.items i WHERE i.id = s.item_id;
 ```
 
+## Keyboard shortcuts
+
+Fever's shortcuts, minus those of what v2 does not have. `?` shows them, and so does
+Settings.
+
+| Keys | Does |
+|------|------|
+| `J` / `K` | Next / previous item (the item left behind is read, as when scrolling) |
+| `Space` / `Shift Space` | Next / previous item when it is in view, else a page down / up |
+| `O` or `→` | Open the current item in a new tab (marks it read) |
+| `S` | Save or unsave the current item |
+| `V` / `Shift V` | Visit the current item's site / and mark its feed as read |
+| `U` | Show or hide read items |
+| `A` / `Shift A` | Mark the group or feed shown / everything as read (asks first) |
+| `Z` | Mark the items read last (within 15 seconds of the last one, on any device) as unread again |
+| `2` / `3` / `5` | All items / Saved / Search |
+| `/` | Search |
+| `F` | Show or hide the feed list |
+| `R` / `Shift R` | Refresh all feeds / the group or feed shown |
+| `N` / `Shift N` | Add a feed / a group |
+| `I` | Edit the group or feed shown |
+| `P` | Settings |
+| `Esc` | Close the list of shortcuts, the menu or the feed list; leave the search field |
+
+The current item is the first one at the top of the reading area; once keys are used,
+it is outlined. Letters follow the keyboard layout (A is A on AZERTY too) and digits
+work without Shift there, as in Fever. Not carried over: the arrow keys moving
+between groups, feeds and items, `1` and `4` (Hot, Sparks), `B` (blacklist) and `0`
+(excerpts).
+
 ## Managing feeds and groups
 
 Settings (the sliders button next to the logo) lists the groups and feeds, with each
@@ -217,7 +247,8 @@ make dev-import
 
 Other tasks: `make test` (Go vet and tests; set `TEST_DATABASE_URL` to a scratch
 database to include the database tests, which wipe the v2 tables there), `make
-web-check` (svelte-check and service worker types), `make generate` (regenerates
+web-check` (svelte-check and service worker types), `make web-test` (the front
+end's tests, with Node's own test runner), `make generate` (regenerates
 `internal/store` from the SQL in `internal/db/queries` with sqlc, and
 `web/src/lib/api/types.ts` from `internal/apitypes` with tygo, formatted with
 Prettier). sqlc and tygo are pinned in `tools/go.mod`.
@@ -226,8 +257,8 @@ Prettier). sqlc and tygo are pinned in `tools/go.mod`.
 start, server down behind nginx, slow server, updates), installability, the install
 button, the phone gestures, reading while things go wrong (counts that cannot be
 reloaded, a refresh in progress, "mark all as read" right after a change, a session
-that has ended), adding, renaming and removing a feed, and searching. It builds two
-versions of the app and runs them with
+that has ended), adding, renaming and removing a feed, searching, and the keyboard
+shortcuts. It builds two versions of the app and runs them with
 nginx, the fake dataset and a headless Chromium in throwaway podman containers,
 removed afterwards. The checks are in `dev/browsertest` (a separate Go module, so
 the server does not depend on chromedp).

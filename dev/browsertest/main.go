@@ -1,7 +1,8 @@
 // Command browsertest drives a headless Chromium against the app to check
 // what unit tests cannot: the service worker, installability, the install
 // button, the phone gestures, reading while the server has problems, and
-// managing feeds and searching. run.sh sets up the containers it expects.
+// managing feeds, searching and the keyboard shortcuts. run.sh sets up the
+// containers it expects.
 package main
 
 import (
@@ -18,6 +19,7 @@ import (
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 	"github.com/chromedp/chromedp/remote"
 )
 
@@ -54,16 +56,23 @@ const (
 
 	// Runs before the app's own scripts, in every page loaded after it is
 	// added. It records the API calls, and can make /api/subscriptions fail
-	// or report a refresh in progress. An alert or a confirmation would
-	// block the page: alerts are recorded, confirmations accepted.
+	// or report a refresh in progress, or delay the next pages of a list. The
+	// bodies sent are recorded too. An alert or a confirmation would
+	// block the page: alerts are recorded, confirmations accepted. Tabs
+	// opened (window.open) are recorded, not opened.
 	instrument = `(() => {
 		const real = window.fetch;
-		const t = (window.__test = { calls: [], alerts: [], fail: false, refreshing: false });
+		const t = (window.__test = { calls: [], bodies: [], alerts: [], opened: [], fail: false, refreshing: false, slowPages: false });
 		window.fetch = async (input, init) => {
 			const request = input instanceof Request ? input : null;
 			const url = new URL(request ? request.url : String(input), location.href);
 			if (url.pathname.startsWith('/api/')) {
 				t.calls.push((init?.method ?? request?.method ?? 'GET') + ' ' + url.pathname);
+				if (typeof init?.body === 'string') t.bodies.push(url.pathname + ' ' + init.body);
+			}
+			// The pages after the first, slow to come.
+			if (t.slowPages && url.pathname === '/api/items' && url.searchParams.has('after')) {
+				await new Promise((done) => setTimeout(done, 1500));
 			}
 			if (url.pathname !== '/api/subscriptions') return real(input, init);
 			if (t.fail) return new Response('down', { status: 503 });
@@ -75,6 +84,7 @@ const (
 			});
 		};
 		window.alert = (message) => void t.alerts.push(String(message));
+		window.open = (url) => (t.opened.push(String(url)), null);
 		window.confirm = () => true;
 	})()`
 )
@@ -182,6 +192,7 @@ func main() {
 	installButton(ctx)
 	reading(ctx, strings.TrimSpace(string(secret)))
 	manage(ctx)
+	keyboard(ctx)
 
 	if failures > 0 {
 		fmt.Printf("%d check(s) failed\n", failures)
@@ -554,4 +565,156 @@ func search(ctx context.Context) {
 	query("SECOND tes")
 	check(waitFor(ctx, `window.__test.calls.some(c => c === 'GET /api/items')`, 5*time.Second),
 		"Search: the same words again search again")
+}
+
+// The keyboard shortcuts, on a feed of 25 long items served by nginx (more
+// than a page).
+func keyboard(ctx context.Context) {
+	press := func(keys string, mods ...chromedp.Modifier) {
+		must(chromedp.Do(ctx, chromedp.KeyEvent(keys, chromedp.KeyModifiers(mods...))))
+		time.Sleep(150 * time.Millisecond)
+	}
+	shift := chromedp.ModifierShift
+	at := func(path string) string { return fmt.Sprintf(`location.pathname === %q`, path) }
+	const (
+		current = `(document.querySelector('.item.current .title')?.textContent.trim() ?? '')`
+		dialog  = `!!document.querySelector('dialog[open]')`
+	)
+	read := func(n int) string {
+		return fmt.Sprintf(`document.querySelectorAll('.item')[%d].classList.contains('read')`, n-1)
+	}
+	opened := func(url string) string { return fmt.Sprintf(`window.__test.opened.includes(%q)`, url) }
+	site := "http://" + *proxy + ":8081/"
+
+	id := eval[int](ctx, fmt.Sprintf(`fetch('/api/feeds', {
+		method: 'POST', headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ url: %q, groupIds: [] })
+	}).then(r => r.json()).then(r => r.feedId)`, site+"keys.xml"))
+	feed := fmt.Sprintf("/feeds/%d", id)
+	navigate(ctx, base+feed)
+	check(waitFor(ctx, `document.querySelectorAll('.item').length === 20`, 10*time.Second), "Keys: a page of 20 items")
+
+	press("j")
+	check(waitFor(ctx, current+` === 'Key item 2'`, 3*time.Second), "J: to the next item, marked as the current one (%q)", eval[string](ctx, current))
+	check(waitFor(ctx, read(1), 3*time.Second), "J: the item scrolled past is read")
+	press("k")
+	check(waitFor(ctx, current+` === 'Key item 1'`, 3*time.Second), "K: back to the previous item")
+	press("jj")
+	check(waitFor(ctx, current+` === 'Key item 3'`, 3*time.Second), "J J: two items on")
+	press("s")
+	check(waitFor(ctx, `document.querySelectorAll('.item')[2].querySelector('.action.save').getAttribute('aria-pressed') === 'true'`, 3*time.Second),
+		"S: the current item is saved")
+	press("o")
+	check(waitFor(ctx, opened(site+"k3"), 2*time.Second) && waitFor(ctx, read(3), 2*time.Second), "O: the current item opens in a new tab, marked read")
+	press("v")
+	check(waitFor(ctx, opened(site), 2*time.Second), "V: the current item's site opens in a new tab")
+	press("z")
+	check(waitFor(ctx, `!(`+read(1)+` || `+read(2)+` || `+read(3)+`)`, 5*time.Second), "Z: the items just read are unread again")
+	scrolled := eval[float64](ctx, `scrollY`)
+	press(" ")
+	check(waitFor(ctx, fmt.Sprintf(`scrollY > %f`, scrolled), 2*time.Second), "Space: further down")
+	press(" ", shift)
+	check(waitFor(ctx, fmt.Sprintf(`Math.abs(scrollY - %f) < 2`, scrolled), 2*time.Second), "Shift Space: back up (%v, was %v)", eval[float64](ctx, `scrollY`), scrolled)
+	press("j")
+	cur := eval[string](ctx, current)
+	tabs := eval[int](ctx, `window.__test.opened.length`)
+	press(kb.ArrowRight)
+	check(waitFor(ctx, fmt.Sprintf(`window.__test.opened.length === %d && window.__test.opened.at(-1) === %q`,
+		tabs+1, site+"k"+strings.TrimPrefix(cur, "Key item ")), 2*time.Second), "→: the current item (%s) opens", cur)
+
+	// U switches between Unread and All (the reading step left All on).
+	const showing = `([...document.querySelectorAll('.segmented button')].find(b => b.getAttribute('aria-pressed') === 'true')?.textContent ?? '')`
+	was := eval[string](ctx, showing)
+	press("u")
+	check(waitFor(ctx, fmt.Sprintf(`%s !== '' && %s !== %q`, showing, showing, was), 5*time.Second), "U: from %s to the other", was)
+	press("u")
+	check(waitFor(ctx, fmt.Sprintf(`%s === %q`, showing, was), 5*time.Second), "U again: back to %s", was)
+
+	press("?")
+	check(waitFor(ctx, dialog+` && document.querySelector('dialog[open]').textContent.includes('Keyboard shortcuts')`, 2*time.Second), "?: the list of shortcuts")
+	press(kb.Escape)
+	check(waitFor(ctx, `!`+dialog, 2*time.Second), "Esc: the list closes")
+
+	refreshed := fmt.Sprintf(`window.__test.bodies.includes('/api/refresh {"feedId":%d,"groupId":null}')`, id)
+	eval[bool](ctx, `(window.__test.bodies.length = 0, true)`)
+	press("R", shift)
+	check(waitFor(ctx, refreshed, 3*time.Second), "Shift R: the feed shown is refreshed")
+	before := eval[string](ctx, `document.querySelector('.shell').className`)
+	press("f")
+	check(waitFor(ctx, fmt.Sprintf(`document.querySelector('.shell').className !== %q`, before), 2*time.Second), "F: the feed list shown or hidden")
+	press(kb.Escape)
+
+	// J past the loaded items while the next page is on its way: the last
+	// item stays in view, and J then goes on into that page.
+	eval[bool](ctx, `(() => {
+		window.__test.slowPages = true;
+		const last = [...document.querySelectorAll('.items > [data-id]')].at(-1);
+		window.scrollTo(0, scrollY + last.getBoundingClientRect().top - 12);
+		return true;
+	})()`)
+	check(waitFor(ctx, current+` === 'Key item 20'`, 3*time.Second), "the last loaded item at the top (%q)", eval[string](ctx, current))
+	press("j")
+	check(waitFor(ctx, `document.querySelectorAll('.item').length === 25`, 6*time.Second), "the next page comes")
+	press("j")
+	check(waitFor(ctx, current+` === 'Key item 21'`, 3*time.Second), "J past the loaded items: on to the next page's first item (%q)", eval[string](ctx, current))
+	press("j")
+	check(waitFor(ctx, current+` === 'Key item 22'`, 3*time.Second), "J: and the next (%q)", eval[string](ctx, current))
+	eval[bool](ctx, `(window.__test.slowPages = false, true)`)
+
+	press("i")
+	check(waitFor(ctx, at(feed+"/edit"), 3*time.Second), "I: the feed's settings")
+	eval[bool](ctx, `(window.__test.bodies.length = 0, true)`)
+	press("R", shift)
+	check(waitFor(ctx, refreshed, 3*time.Second), "Shift R in the feed's settings: that feed is refreshed")
+	press("2")
+	check(waitFor(ctx, at("/"), 3*time.Second), "2: all items")
+	press("3")
+	check(waitFor(ctx, at("/saved"), 3*time.Second), "3: saved items")
+	press("5")
+	check(waitFor(ctx, at("/search")+` && document.activeElement?.name === 'q'`, 3*time.Second), "5: search, ready to type in")
+	press(kb.Escape)
+	check(waitFor(ctx, `document.activeElement?.name !== 'q'`, 2*time.Second), "Esc: out of the search field")
+	press("q") // not a shortcut: nothing happens
+	press("/")
+	check(waitFor(ctx, `document.activeElement?.name === 'q'`, 2*time.Second), "/: into the search field")
+	press(kb.Escape)
+	press("p")
+	check(waitFor(ctx, at("/settings"), 3*time.Second), "P: settings")
+	press("n")
+	check(waitFor(ctx, at("/feeds/new"), 3*time.Second), "N: add a feed")
+	eval[bool](ctx, `(document.activeElement?.blur(), true)`)
+	press("N", shift)
+	check(waitFor(ctx, at("/groups/new"), 3*time.Second), "Shift N: add a group")
+
+	// Marking read, and Z.
+	feedUnread := `fetch('/api/subscriptions').then(r => r.json()).then(s => s.feeds.find(f => f.id === ` + fmt.Sprint(id) + `)?.unread)`
+	navigate(ctx, base+feed)
+	check(waitFor(ctx, `document.querySelectorAll('.item').length > 0`, 10*time.Second), "back on the feed")
+	if eval[string](ctx, showing) != "Unread" {
+		press("u")
+		check(waitFor(ctx, showing+` === 'Unread'`, 5*time.Second), "U: unread items only")
+	}
+	unreadBefore := eval[int](ctx, feedUnread)
+	press("a") // confirmed by the instrument script
+	check(waitFor(ctx, feedUnread+`.then(n => n === 0)`, 5*time.Second), "A: the feed shown is read")
+	check(waitFor(ctx, `document.querySelector('.empty')?.textContent.includes('No unread items') ?? false`, 5*time.Second), "A: no unread items left in the list")
+	press("z")
+	check(waitFor(ctx, `document.querySelectorAll('.item').length === 20 && !document.querySelector('.item.read')`, 5*time.Second),
+		"Z after A: the items come back in the list")
+	// Items read by J a few seconds before may come back too.
+	check(waitFor(ctx, fmt.Sprintf(`%s.then(n => n >= %d)`, feedUnread, unreadBefore), 5*time.Second), "Z after A: unread again on the server")
+
+	press("V", shift)
+	check(waitFor(ctx, opened(site), 2*time.Second), "Shift V: the site opens")
+	check(waitFor(ctx, `document.querySelectorAll('.item.read').length === 20`, 5*time.Second) && waitFor(ctx, feedUnread+`.then(n => n === 0)`, 5*time.Second),
+		"Shift V: and the feed is read")
+	press("z")
+	check(waitFor(ctx, `!document.querySelector('.item.read')`, 5*time.Second), "Z: unread again")
+
+	press("A", shift)
+	check(waitFor(ctx, `fetch('/api/subscriptions').then(r => r.json()).then(s => s.totalUnread === 0)`, 5*time.Second), "Shift A: everything is read")
+	check(eval[bool](ctx, noAlerts), "keyboard shortcuts: no error message")
+
+	status := eval[int](ctx, fmt.Sprintf(`fetch('/api/feeds/%d', { method: 'DELETE' }).then(r => r.status)`, id))
+	check(status == 204, "keys feed removed (%d)", status)
 }

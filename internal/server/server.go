@@ -27,6 +27,7 @@ import (
 type Refresher interface {
 	RefreshAll(ctx context.Context) error
 	RefreshFeed(ctx context.Context, id int64) (bool, error)
+	RefreshGroup(ctx context.Context, id int64) (bool, error)
 	// Wake starts refreshing the feeds that are due.
 	Wake()
 	Busy() bool
@@ -77,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/items", s.requireAuth(s.listItems))
 	mux.Handle("POST /api/items/state", s.requireAuth(s.setItemState))
 	mux.Handle("POST /api/items/read-all", s.requireAuth(s.markAllRead))
+	mux.Handle("POST /api/items/unread-recent", s.requireAuth(s.unreadRecent))
 	mux.Handle("GET /api/items/changes", s.requireAuth(s.itemChanges))
 	mux.Handle("PUT /api/preferences", s.requireAuth(s.putPreferences))
 	mux.Handle("POST /api/feeds", s.requireAuth(s.addFeed))

@@ -11,6 +11,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -406,4 +407,64 @@ func TestOPMLImport(t *testing.T) {
 	if want := []string{"https://example.test/feed ", "https://named.example/feed Named"}; fmt.Sprint(titles) != fmt.Sprint(want) {
 		t.Errorf("stored titles = %q, want %q", titles, want)
 	}
+}
+
+// The endpoints behind the Z and Shift+R keys.
+func TestShortcutEndpoints(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	refresher := &lateRefresher{}
+	c, pool := startAPI(t, refresher)
+	refresher.Refresher = feeds.NewRefresher(pool, log, feeds.Options{Interval: 15 * time.Minute})
+	ctx := context.Background()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO feeds (id, url, next_fetch_at) VALUES
+			(1, 'https://a.example/feed', now() + interval '1 day'),
+			(2, 'https://b.example/feed', now() + interval '1 day');
+		INSERT INTO groups (id, title) VALUES (1, 'G'), (2, 'Empty');
+		INSERT INTO feed_groups VALUES (2, 1);
+		INSERT INTO items (id, feed_id, guid, published_at, read_at) VALUES
+			(1, 1, 'a', now(), now() - interval '1 hour'),  -- read long ago
+			(2, 1, 'b', now(), now() - interval '20 seconds'),
+			(3, 1, 'c', now(), now() - interval '10 seconds'),
+			(4, 1, 'd', now(), now()),                      -- the last read
+			(5, 1, 'e', now(), NULL);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var undone apitypes.UnreadRecent
+	c.call("POST", "/api/items/unread-recent", nil, http.StatusOK, &undone)
+	if fmt.Sprint(sortedIDs(undone)) != "[3 4]" || undone.Items[0].FeedID != 1 {
+		t.Errorf("unread again: %+v, want the items read within 15 s of the last read", undone.Items)
+	}
+	var unread int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM items WHERE read_at IS NULL`).Scan(&unread); err != nil || unread != 3 {
+		t.Errorf("unread items: %d %v, want 3", unread, err)
+	}
+	c.call("POST", "/api/items/unread-recent", nil, http.StatusOK, &undone)
+	if fmt.Sprint(sortedIDs(undone)) != "[2]" {
+		t.Errorf("then: %+v, want the next most recent", undone.Items)
+	}
+
+	// A group's feeds only.
+	c.call("POST", "/api/refresh", apitypes.RefreshRequest{GroupID: ptr(int64(1))}, http.StatusAccepted, nil)
+	rows, err := pool.Query(ctx, `SELECT id FROM feeds WHERE next_fetch_at <= now() ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	due, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil || fmt.Sprint(due) != "[2]" {
+		t.Errorf("due after refreshing the group: %v %v", due, err)
+	}
+	c.call("POST", "/api/refresh", apitypes.RefreshRequest{GroupID: ptr(int64(2))}, http.StatusAccepted, nil)
+	c.call("POST", "/api/refresh", apitypes.RefreshRequest{GroupID: ptr(int64(99))}, http.StatusNotFound, nil)
+}
+
+func sortedIDs(res apitypes.UnreadRecent) []int64 {
+	out := make([]int64, len(res.Items))
+	for i, it := range res.Items {
+		out[i] = it.ID
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }

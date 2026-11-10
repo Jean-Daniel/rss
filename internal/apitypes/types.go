@@ -45,10 +45,23 @@ type Defaults struct {
 	PageSize    int `json:"pageSize"`
 }
 
-// RefreshRequest is the optional body of POST /api/refresh. Without a feed,
-// every feed is refreshed.
+// RefreshRequest is the optional body of POST /api/refresh. Without a feed
+// or a group, every feed is refreshed.
 type RefreshRequest struct {
-	FeedID *int64 `json:"feedId"`
+	FeedID  *int64 `json:"feedId"`
+	GroupID *int64 `json:"groupId"`
+}
+
+// UnreadRecent answers POST /api/items/unread-recent: the items that were
+// marked unread again.
+type UnreadRecent struct {
+	Items []ItemRef `json:"items"`
+}
+
+// ItemRef is an item and its feed.
+type ItemRef struct {
+	ID     int64 `json:"id"`
+	FeedID int64 `json:"feedId"`
 }
 
 type Group struct {

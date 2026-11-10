@@ -39,6 +39,7 @@ class ItemState {
 	#confirmed = 0; // highest change version the server has
 	#countsTimer: ReturnType<typeof setTimeout> | undefined;
 	#lastCountsReload = 0;
+	#saving = new Set<number>(); // items whose saved state is being sent
 
 	/** Per item: how the unread counts differ from the loaded subscriptions. */
 	counts = new SvelteMap<number, CountChange>();
@@ -84,10 +85,15 @@ class ItemState {
 		return this.#read.has(id) || this.#unread.has(id) || this.counts.has(id);
 	}
 
-	/** Saving is rare and explicit, so it is sent right away. */
+	/**
+	 * Saving is rare and explicit, so it is sent right away. While a change
+	 * is on its way, another one for the same item is ignored: overlapping,
+	 * a failure of the first would undo the second.
+	 */
 	async setSaved(item: Item, saved: boolean) {
-		if (item.saved === saved) return;
+		if (item.saved === saved || this.#saving.has(item.id)) return;
 		item.saved = saved;
+		this.#saving.add(item.id);
 		try {
 			await api('/api/items/state', {
 				method: 'POST',
@@ -96,6 +102,8 @@ class ItemState {
 		} catch (err) {
 			item.saved = !saved;
 			throw err;
+		} finally {
+			this.#saving.delete(item.id);
 		}
 		// The item is saved, whether or not the count can follow right away.
 		await this.reloadCountsQuietly();

@@ -154,7 +154,8 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.FeedID != nil {
+	switch {
+	case req.FeedID != nil:
 		found, err := s.refresher.RefreshFeed(r.Context(), *req.FeedID)
 		if err != nil {
 			s.serverError(w, r, err)
@@ -164,9 +165,21 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "Unknown feed.")
 			return
 		}
-	} else if err := s.refresher.RefreshAll(r.Context()); err != nil {
-		s.serverError(w, r, err)
-		return
+	case req.GroupID != nil:
+		found, err := s.refresher.RefreshGroup(r.Context(), *req.GroupID)
+		if err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		if !found {
+			writeError(w, http.StatusNotFound, "Unknown group.")
+			return
+		}
+	default:
+		if err := s.refresher.RefreshAll(r.Context()); err != nil {
+			s.serverError(w, r, err)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusAccepted)
 }

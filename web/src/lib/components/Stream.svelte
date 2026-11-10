@@ -8,6 +8,7 @@
 	import { itemState } from '#lib/item-state.svelte.ts';
 	import { toLogin } from '#lib/navigation.ts';
 	import { setShowReadPref } from '#lib/prefs.ts';
+	import { shortcuts } from '#lib/shortcuts.svelte.ts';
 	import { itemsURL, type StreamData } from '#lib/stream.ts';
 	import { shownSubscriptions } from '#lib/subscriptions.ts';
 	import { phone } from '#lib/ui.svelte.ts';
@@ -166,10 +167,21 @@
 		}
 	}
 
-	async function markAllRead() {
-		if (browsing) return;
-		const label = unread === 1 ? '1 item' : `${unread} items`;
-		if (!confirm(`Mark ${label} as read?`)) return;
+	/** This list, or with everything every item, up to what had arrived when it was shown. */
+	async function markAllRead(everything = false) {
+		if (browsing && !everything) return;
+		const count = everything ? shown().totalUnread : unread;
+		if (count === 0) return;
+		const label = count === 1 ? '1 item' : `${count} items`;
+		if (
+			!confirm(everything ? `Mark all ${label} as read, in every feed?` : `Mark ${label} as read?`)
+		) {
+			return;
+		}
+		const target =
+			!everything && (scope.kind === 'group' || scope.kind === 'feed')
+				? { scope: scope.kind, id: scope.id }
+				: { scope: 'all', id: null };
 		try {
 			// Changes made here that are not sent yet go first. Sent after
 			// this, they would undo part of it: an item marked unread a
@@ -177,11 +189,7 @@
 			await itemState.flush();
 			await api('/api/items/read-all', {
 				method: 'POST',
-				body: JSON.stringify({
-					scope: scope.kind,
-					id: scope.kind === 'all' ? null : scope.id,
-					before: shownAt
-				})
+				body: JSON.stringify({ ...target, before: shownAt })
 			});
 		} catch (err) {
 			if (err instanceof ApiError && err.status === 401) {
@@ -199,6 +207,178 @@
 		setShowReadPref(show);
 		invalidate('app:stream');
 	}
+
+	// Keyboard shortcuts (see shortcuts.svelte.ts). The current item is the
+	// first one still in the reading area, which starts below the phone's
+	// top bar: J and K move to the item after or before it, putting its top
+	// at that line.
+	let list: HTMLElement | undefined = $state();
+	const GAP = 12;
+	const readingTop = () => document.querySelector('.topbar')?.getBoundingClientRect().height ?? 0;
+	const nodes = () => (list ? [...list.querySelectorAll<HTMLElement>(':scope > [data-id]')] : []);
+	const itemFor = (node: HTMLElement | undefined) =>
+		node && items.find((it) => it.id === Number(node.dataset.id));
+	function currentNode() {
+		const top = readingTop();
+		return nodes().find((n) => n.getBoundingClientRect().bottom > top + 40);
+	}
+	function scrollToNode(node: Element) {
+		window.scrollTo({ top: scrollY + node.getBoundingClientRect().top - readingTop() - GAP });
+	}
+	// The item after the current one, and the one to go back to: the
+	// current one if it is partly scrolled past, else the one before.
+	function after() {
+		const all = nodes();
+		const current = currentNode();
+		return current ? all[all.indexOf(current) + 1] : undefined;
+	}
+	function before() {
+		const all = nodes();
+		const current = currentNode();
+		if (!current) return all.at(-1);
+		if (current.getBoundingClientRect().top < readingTop() + GAP - 1) return current;
+		return all[all.indexOf(current) - 1];
+	}
+	// Past the last item: to the end, so it scrolls past the top (and is
+	// read). With more to come, the page cannot scroll "Loading…" up there:
+	// the last item stays in view, and J goes on into the next page.
+	function toEnd() {
+		const end = document.querySelector('.end, .more');
+		if (end) scrollToNode(end);
+	}
+
+	let currentId = $state<number | null>(null);
+	const updateCurrent = () => {
+		currentId = itemFor(currentNode())?.id ?? null;
+	};
+	// While keys are used, the current item is marked, and follows the scroll.
+	$effect(() => {
+		if (!shortcuts.keyboard) return;
+		let frame = 0;
+		const follow = () => {
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(updateCurrent);
+		};
+		updateCurrent();
+		addEventListener('scroll', follow, { passive: true });
+		return () => {
+			cancelAnimationFrame(frame);
+			removeEventListener('scroll', follow);
+		};
+	});
+
+	// The site of an item's feed: its stored address, else the home page of
+	// the item's or the feed's address. Web addresses only.
+	function siteOf(item: Item): string | null {
+		const feed = feedsById.get(item.feedId);
+		for (const candidate of [feed?.siteUrl, item.url, feed?.url]) {
+			if (!candidate) continue;
+			let url: URL;
+			try {
+				url = new URL(candidate);
+			} catch {
+				continue; // not an address
+			}
+			if (url.protocol !== 'http:' && url.protocol !== 'https:') continue;
+			return candidate === feed?.siteUrl ? url.href : url.origin + '/';
+		}
+		return null;
+	}
+
+	// Whether an item of this feed belongs in this list.
+	function inList(feedId: number): boolean {
+		switch (scope.kind) {
+			case 'all':
+				return true;
+			case 'feed':
+				return scope.id === feedId;
+			case 'group':
+				return !!subs.groups.find((g) => g.id === scope.id)?.feedIds.includes(feedId);
+			default:
+				return false; // saved and search lists show read items anyway
+		}
+	}
+
+	async function markFeedRead(feedId: number) {
+		try {
+			await itemState.flush();
+			await api('/api/items/read-all', {
+				method: 'POST',
+				body: JSON.stringify({ scope: 'feed', id: feedId, before: shownAt })
+			});
+		} catch (err) {
+			if (err instanceof ApiError && err.status === 401) {
+				void toLogin();
+				return;
+			}
+			alert(`Could not mark the feed as read: ${err instanceof Error ? err.message : err}`);
+			return;
+		}
+		for (const it of items) if (it.feedId === feedId) it.read = true;
+		await itemState.reloadCountsQuietly();
+	}
+
+	onMount(() =>
+		shortcuts.setList({
+			next() {
+				const node = after();
+				if (node) scrollToNode(node);
+				else toEnd();
+			},
+			previous() {
+				const node = before();
+				if (node) scrollToNode(node);
+				else window.scrollTo({ top: 0 });
+			},
+			page(back) {
+				const top = readingTop();
+				const height = innerHeight - top - 40;
+				const node = back ? before() : after();
+				const y = node?.getBoundingClientRect().top;
+				const inView = y !== undefined && (back ? y > top - height : y < innerHeight - 40);
+				if (node && inView) scrollToNode(node);
+				else window.scrollBy({ top: back ? -height : height });
+			},
+			open() {
+				const item = itemFor(currentNode());
+				if (!item?.url) return;
+				window.open(item.url, '_blank', 'noopener,noreferrer');
+				itemState.markRead(item);
+			},
+			toggleSaved() {
+				const item = itemFor(currentNode());
+				if (!item) return;
+				itemState.setSaved(item, !item.saved).catch((err) => {
+					alert(`Could not change the saved state: ${err instanceof Error ? err.message : err}`);
+				});
+			},
+			visitSite(markRead) {
+				const item = itemFor(currentNode());
+				const site = item && siteOf(item);
+				if (!item || !site) return;
+				window.open(site, '_blank', 'noopener,noreferrer');
+				if (markRead) void markFeedRead(item.feedId);
+			},
+			markAllRead(everything) {
+				void markAllRead(everything);
+			},
+			toggleShowRead() {
+				if (!browsing) showRead(options.unreadOnly);
+			},
+			unreadAgain(restored) {
+				const loaded = new Map(items.map((it) => [it.id, it]));
+				let missing = false;
+				for (const { id, feedId } of restored) {
+					const it = loaded.get(id);
+					if (it) it.read = false;
+					else missing ||= inList(feedId);
+				}
+				// Gone from a list of unread items (after "mark all as
+				// read"): it is loaded again to show them, as Fever did.
+				if (missing && options.unreadOnly) void invalidate('app:stream');
+			}
+		})
+	);
 
 	// Reads and saves made on other devices, applied when the app comes back
 	// to the foreground and every few minutes. Changes come in pages.
@@ -236,7 +416,7 @@
 			<button aria-pressed={options.unreadOnly} onclick={() => showRead(false)}>Unread</button>
 			<button aria-pressed={!options.unreadOnly} onclick={() => showRead(true)}>All</button>
 		</div>
-		<button class="mark-all" onclick={markAllRead} disabled={unread === 0}>
+		<button class="mark-all" onclick={() => markAllRead()} disabled={unread === 0}>
 			Mark all as read
 		</button>
 	</div>
@@ -255,15 +435,16 @@
 		{/if}
 	</div>
 {:else}
-	<div class="items">
+	<div class="items" bind:this={list}>
 		{#each items as item (item.id)}
-			<div {@attach watchReading(item)}>
+			<div data-id={item.id} {@attach watchReading(item)}>
 				<ItemView
 					{item}
 					feed={feedsById.get(item.feedId)}
 					feedHref={feedHref(item.feedId)}
 					showImages={options.showImages}
 					now={clock.now}
+					current={shortcuts.keyboard && item.id === currentId}
 					onToggleRead={toggleRead}
 				/>
 			</div>

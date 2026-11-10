@@ -88,6 +88,16 @@ UPDATE feeds SET next_fetch_at = now() WHERE next_fetch_at > now();
 -- name: MarkFeedDue :execrows
 UPDATE feeds SET next_fetch_at = now() WHERE id = $1;
 
+-- MarkGroupDue makes the feeds of a group due, and reports whether the
+-- group exists (it may have no feeds).
+-- name: MarkGroupDue :one
+WITH due AS (
+    UPDATE feeds f SET next_fetch_at = now()
+    WHERE f.id IN (SELECT fg.feed_id FROM feed_groups fg WHERE fg.group_id = @group_id)
+    RETURNING f.id
+)
+SELECT EXISTS (SELECT 1 FROM groups g WHERE g.id = @group_id)::boolean AS found;
+
 -- DeleteExpiredItems deletes unsaved items published before the cutoff and
 -- remembers their guids (see expired_items).
 -- name: DeleteExpiredItems :execrows

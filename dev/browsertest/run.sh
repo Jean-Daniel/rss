@@ -2,7 +2,7 @@
 # Checks the installed-app behavior in a real (headless) Chromium: the service
 # worker (offline start, updates), installability, the install button, the
 # phone gestures, reading while the server has problems, adding, changing
-# and removing a feed, and searching. It builds two
+# and removing a feed, searching, and the keyboard shortcuts. It builds two
 # versions of the app and runs them in
 # throwaway podman containers, behind nginx as in production, with the fake
 # sample data (dev/fever-sample.sql). Nothing else is touched.
@@ -69,7 +69,8 @@ fever set-password <"$work/password" >/dev/null
 quiet podman run -d --name $name-app --network $name --network-alias fever.test \
 	--env-file "$work/env" -v "$app_files" $run_image /app/fever serve
 quiet podman run -d --name $name-proxy --network $name -e NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
-	-v "$PWD/$here/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro,z" $nginx_image
+	-v "$PWD/$here/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro,z" \
+	-v "$PWD/$here/keys.xml:/srv/keys.xml:ro,z" $nginx_image
 quiet podman run -d --name $name-chrome --network $name -p 127.0.0.1:$port:9222 --shm-size=1g \
 	$chrome_image --user-data-dir=/tmp/profile
 # Over plain HTTP, Chromium allows service workers on localhost only.

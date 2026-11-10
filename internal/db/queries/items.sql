@@ -33,6 +33,14 @@ UPDATE items SET read_at = now(), state_changed_at = now()
 WHERE read_at IS NULL AND added_at <= @before
   AND feed_id IN (SELECT feed_id FROM feed_groups WHERE group_id = @group_id);
 
+-- UnreadRecentlyRead marks unread again the items read last: those read
+-- within 15 seconds of the most recent read, on any device, as Fever's Z key
+-- did. That undoes a "mark all as read" as well.
+-- name: UnreadRecentlyRead :many
+UPDATE items SET read_at = NULL, state_changed_at = now()
+WHERE read_at >= (SELECT max(read_at) FROM items) - interval '15 seconds'
+RETURNING id, feed_id;
+
 -- ItemChanges lists read/saved changes after a position (state_changed_at,
 -- id), for other devices. The id breaks ties: a "mark all as read" gives
 -- thousands of items the same time.

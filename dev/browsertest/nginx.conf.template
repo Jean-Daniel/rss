@@ -27,4 +27,10 @@ server {
         default_type application/rss+xml;
         return 200 '<?xml version="1.0"?><rss version="2.0"><channel><title>Browser test feed</title><link>http://fever-browsertest-proxy:8081/</link><item><title>First test post</title><guid>bt-1</guid><description>One</description></item><item><title>Second test post</title><guid>bt-2</guid><description>Two</description></item></channel></rss>';
     }
+
+    # Long items, for the keyboard shortcuts (too long for a return here).
+    location = /keys.xml {
+        root /srv;
+        default_type application/rss+xml;
+    }
 }

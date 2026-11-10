@@ -223,6 +223,21 @@ func (s *Server) markAllRead(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// unreadRecent answers POST /api/items/unread-recent (the Z key).
+func (s *Server) unreadRecent(w http.ResponseWriter, r *http.Request) {
+	defer s.changing.begin()()
+	rows, err := s.q.UnreadRecentlyRead(r.Context())
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	res := apitypes.UnreadRecent{Items: make([]apitypes.ItemRef, len(rows))}
+	for i, row := range rows {
+		res.Items[i] = apitypes.ItemRef{ID: row.ID, FeedID: row.FeedID}
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 // itemChanges answers GET /api/items/changes?since=<RFC 3339 time>, then
 // ?after=<cursor> while the answer has a next cursor.
 func (s *Server) itemChanges(w http.ResponseWriter, r *http.Request) {

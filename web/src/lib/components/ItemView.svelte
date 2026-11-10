@@ -10,6 +10,7 @@
 		feedHref,
 		showImages,
 		now,
+		current = false,
 		onToggleRead
 	}: {
 		item: Item;
@@ -17,6 +18,8 @@
 		feedHref: string;
 		showImages: boolean;
 		now: number;
+		/** Reached with the keyboard: the item the keys act on. */
+		current?: boolean;
 		onToggleRead: (item: Item) => void;
 	} = $props();
 
@@ -38,7 +41,9 @@
 	class="item"
 	class:read={item.read}
 	class:saved={item.saved}
+	class:current
 	aria-labelledby="item-{item.id}"
+	aria-current={current ? 'true' : undefined}
 >
 	<header>
 		<h2 class="title" id="item-{item.id}">
@@ -101,6 +106,12 @@
 		background: var(--surface);
 		box-shadow: var(--shadow);
 		overflow: hidden;
+	}
+
+	.item.current {
+		box-shadow:
+			0 0 0 2px var(--accent-strong),
+			var(--shadow);
 	}
 
 	header {

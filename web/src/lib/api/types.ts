@@ -61,11 +61,26 @@ export interface Defaults extends Preferences {
 	pageSize: number /* int */;
 }
 /**
- * RefreshRequest is the optional body of POST /api/refresh. Without a feed,
- * every feed is refreshed.
+ * RefreshRequest is the optional body of POST /api/refresh. Without a feed
+ * or a group, every feed is refreshed.
  */
 export interface RefreshRequest {
 	feedId: number /* int64 */ | null;
+	groupId: number /* int64 */ | null;
+}
+/**
+ * UnreadRecent answers POST /api/items/unread-recent: the items that were
+ * marked unread again.
+ */
+export interface UnreadRecent {
+	items: ItemRef[];
+}
+/**
+ * ItemRef is an item and its feed.
+ */
+export interface ItemRef {
+	id: number /* int64 */;
+	feedId: number /* int64 */;
 }
 export interface Group extends DisplayOptions {
 	id: number /* int64 */;

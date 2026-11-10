@@ -27,10 +27,11 @@ import (
 
 type idleRefresher struct{}
 
-func (idleRefresher) RefreshAll(context.Context) error                 { return nil }
-func (idleRefresher) RefreshFeed(context.Context, int64) (bool, error) { return true, nil }
-func (idleRefresher) Wake()                                            {}
-func (idleRefresher) Busy() bool                                       { return false }
+func (idleRefresher) RefreshAll(context.Context) error                  { return nil }
+func (idleRefresher) RefreshFeed(context.Context, int64) (bool, error)  { return true, nil }
+func (idleRefresher) RefreshGroup(context.Context, int64) (bool, error) { return true, nil }
+func (idleRefresher) Wake()                                             {}
+func (idleRefresher) Busy() bool                                        { return false }
 func (idleRefresher) Discover(context.Context, string, *string, *string) (*feeds.Found, []feeds.Choice, error) {
 	return nil, nil, errors.New("not available in tests")
 }

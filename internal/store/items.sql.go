@@ -167,3 +167,37 @@ func (q *Queries) MarkUnsaved(ctx context.Context, ids []int64) (int64, error) {
 	}
 	return result.RowsAffected(), nil
 }
+
+const unreadRecentlyRead = `-- name: UnreadRecentlyRead :many
+UPDATE items SET read_at = NULL, state_changed_at = now()
+WHERE read_at >= (SELECT max(read_at) FROM items) - interval '15 seconds'
+RETURNING id, feed_id
+`
+
+type UnreadRecentlyReadRow struct {
+	ID     int64
+	FeedID int64
+}
+
+// UnreadRecentlyRead marks unread again the items read last: those read
+// within 15 seconds of the most recent read, on any device, as Fever's Z key
+// did. That undoes a "mark all as read" as well.
+func (q *Queries) UnreadRecentlyRead(ctx context.Context) ([]UnreadRecentlyReadRow, error) {
+	rows, err := q.db.Query(ctx, unreadRecentlyRead)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UnreadRecentlyReadRow
+	for rows.Next() {
+		var i UnreadRecentlyReadRow
+		if err := rows.Scan(&i.ID, &i.FeedID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

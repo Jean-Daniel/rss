@@ -9,7 +9,7 @@ DEV_DB_PORT := 55432
 IMAGE       := localhost/fever-v2:latest
 GO_TOOL     := go tool -modfile=tools/go.mod
 
-.PHONY: help dev web-dev web-install web-check web-build generate test browser-test build build-bin \
+.PHONY: help dev web-dev web-install web-check web-test web-build generate test browser-test build build-bin \
         dev-db dev-db-stop dev-sample dev-import dev-import-sample dev-password
 
 help:
@@ -21,6 +21,7 @@ help:
 	@echo "make dev           run the Go server (API on LISTEN_ADDR)"
 	@echo "make web-dev       run the Vite dev server in a container on http://localhost:5173"
 	@echo "make web-check     type-check the front end"
+	@echo "make web-test      run the front end's tests (Node's test runner)"
 	@echo "make generate      regenerate sqlc queries and TypeScript API types"
 	@echo "make test          run the Go tests"
 	@echo "make browser-test  check the installed app in a headless Chromium (containers)"
@@ -58,6 +59,9 @@ web-dev:
 
 web-check:
 	web/npm run check
+
+web-test:
+	web/npm test
 
 web-build:
 	web/npm run build

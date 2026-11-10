@@ -250,6 +250,24 @@ func (q *Queries) MarkFeedDue(ctx context.Context, id int64) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
+const markGroupDue = `-- name: MarkGroupDue :one
+WITH due AS (
+    UPDATE feeds f SET next_fetch_at = now()
+    WHERE f.id IN (SELECT fg.feed_id FROM feed_groups fg WHERE fg.group_id = $1)
+    RETURNING f.id
+)
+SELECT EXISTS (SELECT 1 FROM groups g WHERE g.id = $1)::boolean AS found
+`
+
+// MarkGroupDue makes the feeds of a group due, and reports whether the
+// group exists (it may have no feeds).
+func (q *Queries) MarkGroupDue(ctx context.Context, groupID int64) (bool, error) {
+	row := q.db.QueryRow(ctx, markGroupDue, groupID)
+	var found bool
+	err := row.Scan(&found)
+	return found, err
+}
+
 const setFeedFavicon = `-- name: SetFeedFavicon :exec
 UPDATE feeds SET favicon_id = $2, favicon_checked_at = now() WHERE id = $1
 `
