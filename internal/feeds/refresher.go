@@ -63,6 +63,9 @@ type Refresher struct {
 	wake      chan struct{}
 	requested atomic.Bool // a refresh was asked for and has not started yet
 	running   atomic.Bool
+	// life is the context Run runs with: work started outside a run (the
+	// favicon of a feed just added) stops with it.
+	life atomic.Pointer[context.Context]
 }
 
 func NewRefresher(pool *pgxpool.Pool, log *slog.Logger, opts Options) *Refresher {
@@ -78,6 +81,7 @@ func NewRefresher(pool *pgxpool.Pool, log *slog.Logger, opts Options) *Refresher
 
 // Run refreshes due feeds, and deletes expired items, until ctx ends.
 func (r *Refresher) Run(ctx context.Context) {
+	r.life.Store(&ctx)
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	var lastCleanup time.Time
@@ -122,6 +126,12 @@ func (r *Refresher) RefreshFeed(ctx context.Context, id int64) (bool, error) {
 	}
 	r.poke()
 	return true, nil
+}
+
+// Wake starts refreshing the feeds that are due now, such as feeds just
+// added or changed.
+func (r *Refresher) Wake() {
+	r.poke()
 }
 
 // deleteExpired removes unsaved items older than the retention period.
@@ -229,33 +239,42 @@ func (r *Refresher) refreshFeed(parent context.Context, f store.DueFeedsRow) fee
 	if err != nil {
 		return r.failed(parent, f, err)
 	}
+	result, site := r.save(parent, f, res)
+	if site != nil {
+		r.checkFavicon(ctx, f, site)
+	}
+	return result
+}
 
+// save records what a fetch brought: new items, validators, the next fetch.
+// It returns the site to look for a favicon on, or nil when the outcome
+// could not be saved.
+func (r *Refresher) save(ctx context.Context, f store.DueFeedsRow, res *fetchResult) (feedResult, *url.URL) {
 	feedURL := content.ParseHTTP(res.finalURL)
 	if res.notModified {
-		if err := r.q.FeedNotModified(parent, store.FeedNotModifiedParams{ID: f.ID, NextFetchAt: r.nextFetch()}); err != nil {
-			return r.notSaved(parent, f, err, feedResult{})
+		if err := r.q.FeedNotModified(ctx, store.FeedNotModifiedParams{ID: f.ID, NextFetchAt: r.nextFetch()}); err != nil {
+			return r.notSaved(ctx, f, err, feedResult{}), nil
 		}
-		r.checkFavicon(ctx, f, siteOf(f.SiteUrl, "", feedURL))
-		return feedResult{notModified: true}
+		return feedResult{notModified: true}, siteOf(f.SiteUrl, "", feedURL)
 	}
 
 	now := r.now()
 	items := toItems(res.feed, res.finalURL, now, now.Add(-Retention))
-	added, err := r.storeItems(parent, f.ID, items)
+	added, err := r.storeItems(ctx, f.ID, items)
 	if err != nil {
 		// Recorded as a failure, keeping the old ETag and Last-Modified:
 		// the next fetch must download the feed again, not be told that
 		// nothing changed.
-		r.warn(parent, "save items", "feed", f.ID, "err", err)
-		failed := r.failed(parent, f, fmt.Errorf("New items could not be saved: %w", err))
+		r.warn(ctx, "save items", "feed", f.ID, "err", err)
+		failed := r.failed(ctx, f, fmt.Errorf("New items could not be saved: %w", err))
 		failed.bytes = res.size
-		return failed
+		return failed, nil
 	}
 	siteURL := ""
 	if site := content.ResolveHTTP(feedURL, res.feed.Link); site != nil {
 		siteURL = site.String()
 	}
-	err = r.q.FeedFetched(parent, store.FeedFetchedParams{
+	err = r.q.FeedFetched(ctx, store.FeedFetchedParams{
 		ID:           f.ID,
 		Title:        content.Text(res.feed.Title, 500),
 		SiteUrl:      siteURL,
@@ -265,10 +284,9 @@ func (r *Refresher) refreshFeed(parent context.Context, f store.DueFeedsRow) fee
 		NextFetchAt:  r.nextFetch(),
 	})
 	if err != nil {
-		return r.notSaved(parent, f, err, feedResult{newItems: added, bytes: res.size})
+		return r.notSaved(ctx, f, err, feedResult{newItems: added, bytes: res.size}), nil
 	}
-	r.checkFavicon(ctx, f, siteOf(f.SiteUrl, siteURL, feedURL))
-	return feedResult{newItems: added, bytes: res.size}
+	return feedResult{newItems: added, bytes: res.size}, siteOf(f.SiteUrl, siteURL, feedURL)
 }
 
 // notSaved handles a fetch that worked but whose outcome could not be saved.

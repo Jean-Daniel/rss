@@ -76,11 +76,14 @@ func (s *Server) getSubscriptions(w http.ResponseWriter, r *http.Request) {
 		Groups: make([]apitypes.Group, 0, len(groups)),
 		Feeds:  make([]apitypes.Feed, 0, len(subscribed)),
 	}
+	if res.Defaults, err = s.preferences(ctx); err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	unread := make(map[int64]int64, len(subscribed))
 	feedsOfGroup := make(map[int64][]int64)
 	res.Refreshing = s.refresher.Busy()
 	res.RetentionWeeks = int(feeds.Retention / (7 * 24 * time.Hour))
-	res.Defaults = readingDefaults
 	now := time.Now()
 	for _, f := range subscribed {
 		res.SavedCount = f.SavedCount     // the same on every row
@@ -94,19 +97,21 @@ func (s *Server) getSubscriptions(w http.ResponseWriter, r *http.Request) {
 			feedsOfGroup[gid] = append(feedsOfGroup[gid], f.ID)
 		}
 		res.Feeds = append(res.Feeds, apitypes.Feed{
-			ID:              f.ID,
-			Title:           f.DisplayTitle,
-			URL:             f.Url,
-			SiteURL:         f.SiteUrl,
-			FaviconID:       f.FaviconID,
-			Unread:          f.Unread,
-			GroupIDs:        f.GroupIds,
-			ShowUnreadCount: f.ShowUnreadCount,
-			ShowImages:      f.ShowImages,
-			OldestFirst:     f.OldestFirst,
-			Error:           f.LastError,
-			LastUpdatedAt:   f.LastNewItemAt,
-			Stale:           isStale(f.LastFetchedAt, f.LastNewItemAt, now),
+			ID:        f.ID,
+			Title:     f.DisplayTitle,
+			URL:       f.Url,
+			SiteURL:   f.SiteUrl,
+			FaviconID: f.FaviconID,
+			Unread:    f.Unread,
+			GroupIDs:  f.GroupIds,
+			DisplayOptions: apitypes.DisplayOptions{
+				ShowUnreadCount: f.ShowUnreadCount,
+				ShowImages:      f.ShowImages,
+				OldestFirst:     f.OldestFirst,
+			},
+			Error:         f.LastError,
+			LastUpdatedAt: f.LastNewItemAt,
+			Stale:         isStale(f.LastFetchedAt, f.LastNewItemAt, now),
 		})
 	}
 	for _, g := range groups {
@@ -119,13 +124,15 @@ func (s *Server) getSubscriptions(w http.ResponseWriter, r *http.Request) {
 			n += unread[id]
 		}
 		res.Groups = append(res.Groups, apitypes.Group{
-			ID:              g.ID,
-			Title:           g.Title,
-			Unread:          n,
-			FeedIDs:         fids,
-			ShowUnreadCount: g.ShowUnreadCount,
-			ShowImages:      g.ShowImages,
-			OldestFirst:     g.OldestFirst,
+			ID:      g.ID,
+			Title:   g.Title,
+			Unread:  n,
+			FeedIDs: fids,
+			DisplayOptions: apitypes.DisplayOptions{
+				ShowUnreadCount: g.ShowUnreadCount,
+				ShowImages:      g.ShowImages,
+				OldestFirst:     g.OldestFirst,
+			},
 		})
 	}
 	writeJSON(w, http.StatusOK, res)

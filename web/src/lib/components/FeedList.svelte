@@ -29,7 +29,8 @@
 						class:read={feed.unread === 0}
 						class:failing={feed.error !== null}
 						title={feed.error ?? (feed.stale ? staleText(feed, retentionWeeks) : feed.url)}
-						aria-current={selection.kind === 'feed' && selection.feed.id === feed.id
+						aria-current={(selection.kind === 'feed' || selection.kind === 'manage') &&
+						selection.feed?.id === feed.id
 							? 'page'
 							: undefined}
 					>
@@ -50,7 +51,8 @@
 									<path d="M8 4.75V8l2.25 1.5" />
 								</svg>
 							{/if}
-							{#if feed.unread > 0 && feed.showUnreadCount !== false}
+							<!-- The feed's option, else the group's it is listed in. -->
+							{#if feed.unread > 0 && (feed.showUnreadCount ?? group?.showUnreadCount) !== false}
 								<span class="count">{feed.unread}</span>
 							{/if}
 						{/if}

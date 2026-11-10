@@ -1,7 +1,7 @@
 // Command browsertest drives a headless Chromium against the app to check
 // what unit tests cannot: the service worker, installability, the install
-// button, the phone gestures, and reading while the server has problems.
-// run.sh sets up the containers it expects.
+// button, the phone gestures, reading while the server has problems, and
+// managing feeds and searching. run.sh sets up the containers it expects.
 package main
 
 import (
@@ -181,6 +181,7 @@ func main() {
 	phone(ctx)
 	installButton(ctx)
 	reading(ctx, strings.TrimSpace(string(secret)))
+	manage(ctx)
 
 	if failures > 0 {
 		fmt.Printf("%d check(s) failed\n", failures)
@@ -467,4 +468,90 @@ func reading(ctx context.Context, secret string) {
 	check(waitFor(ctx, fmt.Sprintf(`location.pathname === %q && %s`, list, itemsShown), 10*time.Second), "logged in again: back on %s", list)
 	check(waitFor(ctx, allSent, 6*time.Second), "logged in again: the change kept meanwhile is sent")
 	check(eval[bool](ctx, noAlerts), "session ended: no error message")
+}
+
+// Adding a feed from its site's address, renaming it and unsubscribing, as
+// the reader would. The site is served by the nginx container.
+func manage(ctx context.Context) {
+	do := func(js string) { eval[bool](ctx, js+`, true`) }
+	fill := func(selector, value string) {
+		do(fmt.Sprintf(`(() => {
+			const field = document.querySelector(%q);
+			field.value = %q;
+			field.dispatchEvent(new Event('input', { bubbles: true }));
+		})()`, selector, value))
+	}
+	submit := func(selector string) { do(fmt.Sprintf(`document.querySelector(%q).form.requestSubmit()`, selector)) }
+	const heading = `document.querySelector('.content-header h1')?.textContent`
+
+	navigate(ctx, base+"/")
+	check(waitFor(ctx, readerShown, 10*time.Second), "reader shown")
+	do(`document.querySelector('a[href="/settings"]').click()`)
+	check(waitFor(ctx, `!!document.querySelector('a[href="/feeds/new"]')`, 5*time.Second), "settings page shown")
+	do(`document.querySelector('a[href="/feeds/new"]').click()`)
+	const address = `input[placeholder="https://example.com"]`
+	check(waitFor(ctx, fmt.Sprintf(`!!document.querySelector(%q)`, address), 5*time.Second), "Add a feed: form shown")
+	fill(address, "http://"+*proxy+":8081/")
+	submit(address)
+	check(waitFor(ctx, `/^\/feeds\/\d+$/.test(location.pathname) && document.querySelectorAll('.item').length === 2`, 15*time.Second),
+		"Add a feed: the site's feed is found and added, its items shown")
+	feed := eval[string](ctx, `location.pathname`)
+	check(eval[string](ctx, heading) == "Browser test feed", "Add a feed: titled after the feed (%q)", eval[string](ctx, heading))
+	check(eval[bool](ctx, `[...document.querySelectorAll('.feeds a')].some(a => a.getAttribute('href') === '`+feed+`')`),
+		"Add a feed: listed with the other feeds")
+
+	do(`document.querySelector('.content-header a[href$="/edit"]').click()`)
+	const name = `input[placeholder="The feed's own title"]`
+	check(waitFor(ctx, fmt.Sprintf(`!!document.querySelector(%q)`, name), 5*time.Second), "Edit: feed settings shown")
+	fill(name, "Renamed feed")
+	submit(name)
+	check(waitFor(ctx, fmt.Sprintf(`location.pathname === %q && %s === 'Renamed feed'`, feed, heading), 5*time.Second),
+		"Edit: renamed, back on the feed")
+
+	search(ctx)
+
+	navigate(ctx, base+feed+"/edit")
+	check(waitFor(ctx, `!!document.querySelector('button.danger')`, 10*time.Second), "Edit: page opened directly")
+	do(`document.querySelector('button.danger').click()`) // confirmed by the instrument script
+	check(waitFor(ctx, `location.pathname === '/'`, 5*time.Second), "Unsubscribe: back to all items")
+	gone := eval[bool](ctx, `fetch('/api/subscriptions').then(r => r.json()).then(s => !s.feeds.some(f => '/feeds/' + f.id === '`+feed+`'))`)
+	check(gone, "Unsubscribe: the feed is gone")
+	check(eval[bool](ctx, `!document.querySelector('.feeds a[href="`+feed+`"]')`), "Unsubscribe: not listed any more")
+	check(eval[bool](ctx, noAlerts), "managing feeds: no error message")
+}
+
+// Searching, in the items of the feed manage added.
+func search(ctx context.Context) {
+	const field = `input[name="q"]`
+	query := func(words string) {
+		eval[bool](ctx, fmt.Sprintf(`(() => {
+			const field = document.querySelector(%q);
+			field.value = %q;
+			field.form.requestSubmit();
+			return true;
+		})()`, field, words))
+	}
+	titles := `[...document.querySelectorAll('.item .title')].map(t => t.textContent.trim())`
+
+	eval[bool](ctx, `document.querySelector('a[href="/search"]').click(), true`)
+	check(waitFor(ctx, fmt.Sprintf(`location.pathname === '/search' && document.activeElement === document.querySelector(%q)`, field), 5*time.Second),
+		"Search: page shown, ready to type in")
+	query("SECOND tes")
+	check(waitFor(ctx, `new URLSearchParams(location.search).get('q') === 'SECOND tes' && document.querySelectorAll('.item').length > 0`, 10*time.Second),
+		"Search: results shown")
+	found := eval[[]string](ctx, titles)
+	check(len(found) == 1 && found[0] == "Second test post", "Search: every word, case and word starts ignored (%q)", found)
+	check(eval[bool](ctx, `!document.querySelector('.toolbar')`), "Search: no Unread/All or Mark all as read")
+	query("nothing-like-this")
+	check(waitFor(ctx, `document.querySelector('.empty')?.textContent.includes('Nothing found for')`, 10*time.Second),
+		"Search: nothing found, said so")
+	eval[bool](ctx, `(history.back(), true)`)
+	check(waitFor(ctx, `new URLSearchParams(location.search).get('q') === 'SECOND tes' && document.querySelectorAll('.item').length === 1`, 10*time.Second),
+		"Search: Back shows the previous results")
+
+	// The same words again: searched again, not ignored.
+	eval[bool](ctx, `(window.__test.calls.length = 0, true)`)
+	query("SECOND tes")
+	check(waitFor(ctx, `window.__test.calls.some(c => c === 'GET /api/items')`, 5*time.Second),
+		"Search: the same words again search again")
 }

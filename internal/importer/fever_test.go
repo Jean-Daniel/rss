@@ -45,3 +45,27 @@ func TestFeverGUID(t *testing.T) {
 		t.Errorf("a numeric guid that is not the checksum changed: %q", got)
 	}
 }
+
+func TestDecodeAuth(t *testing.T) {
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	str := func(p *string) string {
+		if p == nil {
+			return "<nil>"
+		}
+		return *p
+	}
+	for _, tt := range []struct{ auth, user, pass string }{
+		{b64("joe:secret"), "joe", "secret"},
+		{b64(":token"), "", "token"}, // a password only
+		{b64("joe:"), "joe", ""},
+		{b64(":"), "<nil>", "<nil>"},
+		{b64("no colon"), "<nil>", "<nil>"},
+		{"", "<nil>", "<nil>"},
+		{"not base64!", "<nil>", "<nil>"},
+	} {
+		u, p := decodeAuth(tt.auth)
+		if str(u) != tt.user || str(p) != tt.pass {
+			t.Errorf("decodeAuth(%q) = %s, %s; want %s, %s", tt.auth, str(u), str(p), tt.user, tt.pass)
+		}
+	}
+}

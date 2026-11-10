@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,6 +19,7 @@ import (
 	"fever/internal/apitypes"
 	"fever/internal/auth"
 	"fever/internal/config"
+	"fever/internal/feeds"
 	"fever/internal/store"
 )
 
@@ -25,7 +27,12 @@ import (
 type Refresher interface {
 	RefreshAll(ctx context.Context) error
 	RefreshFeed(ctx context.Context, id int64) (bool, error)
+	// Wake starts refreshing the feeds that are due.
+	Wake()
 	Busy() bool
+	// Discover and Subscribed add a feed: see feeds.Refresher.
+	Discover(ctx context.Context, address string, username, password *string) (*feeds.Found, []feeds.Choice, error)
+	Subscribed(ctx context.Context, id int64, found *feeds.Found)
 }
 
 type Server struct {
@@ -37,6 +44,9 @@ type Server struct {
 	log       *slog.Logger
 	static    http.Handler
 	changing  stateChanges
+	// prefs holds the reading defaults once read: only this server changes
+	// them (PUT /api/preferences).
+	prefs atomic.Pointer[apitypes.Defaults]
 }
 
 // New builds the server. webFiles holds the built front end; it is nil in
@@ -68,6 +78,16 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/items/state", s.requireAuth(s.setItemState))
 	mux.Handle("POST /api/items/read-all", s.requireAuth(s.markAllRead))
 	mux.Handle("GET /api/items/changes", s.requireAuth(s.itemChanges))
+	mux.Handle("PUT /api/preferences", s.requireAuth(s.putPreferences))
+	mux.Handle("POST /api/feeds", s.requireAuth(s.addFeed))
+	mux.Handle("GET /api/feeds/{id}", s.requireAuth(s.getFeed))
+	mux.Handle("PUT /api/feeds/{id}", s.requireAuth(s.updateFeed))
+	mux.Handle("DELETE /api/feeds/{id}", s.requireAuth(s.deleteFeed))
+	mux.Handle("POST /api/groups", s.requireAuth(s.createGroup))
+	mux.Handle("PUT /api/groups/{id}", s.requireAuth(s.updateGroup))
+	mux.Handle("DELETE /api/groups/{id}", s.requireAuth(s.deleteGroup))
+	mux.Handle("GET /api/opml", s.requireAuth(s.exportOPML))
+	mux.Handle("POST /api/opml", s.requireAuth(s.importOPML))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Unknown API endpoint.")
 	})

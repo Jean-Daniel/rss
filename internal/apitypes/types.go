@@ -41,13 +41,8 @@ type Subscriptions struct {
 }
 
 type Defaults struct {
-	OldestFirst bool `json:"oldestFirst"`
-	ShowImages  bool `json:"showImages"`
-	// ShowRead lists read items too, not only unread ones.
-	ShowRead bool `json:"showRead"`
-	// AutoRead marks items read as they scroll out of view.
-	AutoRead bool `json:"autoRead"`
-	PageSize int  `json:"pageSize"`
+	Preferences `tstype:",extends"`
+	PageSize    int `json:"pageSize"`
 }
 
 // RefreshRequest is the optional body of POST /api/refresh. Without a feed,
@@ -57,28 +52,22 @@ type RefreshRequest struct {
 }
 
 type Group struct {
-	ID      int64   `json:"id"`
-	Title   string  `json:"title"`
-	Unread  int64   `json:"unread"`
-	FeedIDs []int64 `json:"feedIds"`
-	// Display options; null when the global preference applies.
-	ShowUnreadCount *bool `json:"showUnreadCount"`
-	ShowImages      *bool `json:"showImages"`
-	OldestFirst     *bool `json:"oldestFirst"`
+	ID             int64   `json:"id"`
+	Title          string  `json:"title"`
+	Unread         int64   `json:"unread"`
+	FeedIDs        []int64 `json:"feedIds"`
+	DisplayOptions `tstype:",extends"`
 }
 
 type Feed struct {
-	ID        int64   `json:"id"`
-	Title     string  `json:"title"`
-	URL       string  `json:"url"`
-	SiteURL   string  `json:"siteUrl"`
-	FaviconID *int64  `json:"faviconId"`
-	Unread    int64   `json:"unread"`
-	GroupIDs  []int64 `json:"groupIds"`
-	// Display options; null when the group's or the global one applies.
-	ShowUnreadCount *bool `json:"showUnreadCount"`
-	ShowImages      *bool `json:"showImages"`
-	OldestFirst     *bool `json:"oldestFirst"`
+	ID             int64   `json:"id"`
+	Title          string  `json:"title"`
+	URL            string  `json:"url"`
+	SiteURL        string  `json:"siteUrl"`
+	FaviconID      *int64  `json:"faviconId"`
+	Unread         int64   `json:"unread"`
+	GroupIDs       []int64 `json:"groupIds"`
+	DisplayOptions `tstype:",extends"`
 	// Error is the last fetch problem, if any.
 	Error *string `json:"error"`
 	// LastUpdatedAt is when the feed last brought new items (RFC 3339), or
@@ -143,4 +132,100 @@ type ItemChange struct {
 	ID    int64 `json:"id"`
 	Read  bool  `json:"read"`
 	Saved bool  `json:"saved"`
+}
+
+// Preferences is the body of PUT /api/preferences: the reading preferences
+// used where a group or feed sets nothing (Subscriptions.Defaults).
+type Preferences struct {
+	OldestFirst bool `json:"oldestFirst"`
+	ShowImages  bool `json:"showImages"`
+	// ShowRead lists read items too, not only unread ones, on devices where
+	// the reader has not chosen between Unread and All.
+	ShowRead bool `json:"showRead"`
+	// AutoRead marks items read as they scroll out of view.
+	AutoRead bool `json:"autoRead"`
+}
+
+// DisplayOptions are a group's or a feed's own reading options; null means
+// the next level applies (the group's, then the preferences).
+type DisplayOptions struct {
+	ShowImages      *bool `json:"showImages"`
+	OldestFirst     *bool `json:"oldestFirst"`
+	ShowUnreadCount *bool `json:"showUnreadCount"`
+}
+
+// AddFeedRequest is the body of POST /api/feeds. URL may be a web page that
+// links to its feed.
+type AddFeedRequest struct {
+	URL      string  `json:"url"`
+	GroupIDs []int64 `json:"groupIds"`
+	// Username and Password are for feeds behind a login; null otherwise.
+	// The username may be empty when the feed only wants a password.
+	Username *string `json:"username"`
+	Password *string `json:"password"`
+}
+
+// AddFeedResponse answers POST /api/feeds. Either FeedID is set (the new
+// feed, or the one already subscribed to when Existing), or Choices lists the
+// feeds a web page links to: ask again with one of their URLs.
+type AddFeedResponse struct {
+	FeedID   *int64       `json:"feedId"`
+	Existing bool         `json:"existing"`
+	Choices  []FeedChoice `json:"choices" tstype:"FeedChoice[] | null"`
+}
+
+type FeedChoice struct {
+	URL   string `json:"url"`
+	Title string `json:"title"`
+}
+
+// FeedSettings answers GET /api/feeds/{id}: what the feed's settings page
+// shows besides Subscriptions.
+type FeedSettings struct {
+	ID int64 `json:"id"`
+	// Title is the stored title: the reader's, or the feed's own. Empty
+	// until the feed has been fetched.
+	Title          string  `json:"title"`
+	URL            string  `json:"url"`
+	GroupIDs       []int64 `json:"groupIds"`
+	DisplayOptions `tstype:",extends"`
+	Username       *string `json:"username"`
+	HasPassword    bool    `json:"hasPassword"`
+	ItemCount      int64   `json:"itemCount"`
+	SavedCount     int64   `json:"savedCount"`
+}
+
+// FeedUpdate is the body of PUT /api/feeds/{id}.
+type FeedUpdate struct {
+	// Title is empty to use the feed's own.
+	Title          string  `json:"title"`
+	URL            string  `json:"url"`
+	GroupIDs       []int64 `json:"groupIds"`
+	DisplayOptions `tstype:",extends"`
+	// Username is null when the feed needs no login. It may be empty: some
+	// feeds only want a password (a token).
+	Username *string `json:"username"`
+	// Password replaces the stored one when not null.
+	Password *string `json:"password"`
+}
+
+// GroupUpdate is the body of POST /api/groups and PUT /api/groups/{id}.
+type GroupUpdate struct {
+	Title          string  `json:"title"`
+	FeedIDs        []int64 `json:"feedIds"`
+	DisplayOptions `tstype:",extends"`
+}
+
+// Created answers a POST that created something.
+type Created struct {
+	ID int64 `json:"id"`
+}
+
+// OPMLImport answers POST /api/opml (the body is the OPML file).
+type OPMLImport struct {
+	FeedsAdded  int `json:"feedsAdded"`
+	FeedsKnown  int `json:"feedsKnown"`
+	GroupsAdded int `json:"groupsAdded"`
+	// Skipped counts entries whose address is not a web address.
+	Skipped int `json:"skipped"`
 }

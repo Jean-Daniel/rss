@@ -1,7 +1,8 @@
 #!/bin/sh
 # Checks the installed-app behavior in a real (headless) Chromium: the service
 # worker (offline start, updates), installability, the install button, the
-# phone gestures, and reading while the server has problems. It builds two
+# phone gestures, reading while the server has problems, adding, changing
+# and removing a feed, and searching. It builds two
 # versions of the app and runs them in
 # throwaway podman containers, behind nginx as in production, with the fake
 # sample data (dev/fever-sample.sql). Nothing else is touched.
@@ -50,6 +51,7 @@ cat >"$work/env" <<EOF
 DATABASE_URL=postgres://rss:test@$name-db:5432/rss?sslmode=disable
 PUBLIC_ORIGIN=http://localhost:8080
 REFRESH_INTERVAL=1000h
+FETCH_ALLOW_PRIVATE=true
 EOF
 
 echo "Starting the containers..."

@@ -11,9 +11,10 @@ and mobile, and read state is stored in PostgreSQL.
 - **Database:** PostgreSQL. v2 tables live in their own `reader` schema, so they can
   sit next to the old `fever_*` tables in the same database.
 
-Status: steps 1 to 4 are done: schema, login, the importer for the old data, the page
-layout, feed refreshing, reading (item lists, mark as read on scroll, saving), and
-the phone and installed-app polish. Next: feed and preference management.
+Status: steps 1 to 6 are done: schema, login, the importer for the old data, the page
+layout, feed refreshing, reading (item lists, mark as read on scroll, saving), the
+phone and installed-app polish, managing feeds, groups and preferences, and search.
+Left for later: keyboard shortcuts and dark mode.
 
 ## Configuration
 
@@ -84,8 +85,9 @@ modified" answer. The refresh button in the sidebar makes every feed due at once
 ## Reading
 
 Lists show unread items, oldest first, full articles with images, 20 at a time, as
-the old Fever setup did; "All" shows read items too (remembered per device). Saved
-items are listed newest first.
+the old Fever setup did; "All" shows read items too (remembered per device). These
+defaults can be changed in Settings, and each group or feed can set its own order,
+images and unread count. Saved items are listed newest first.
 
 - **Mark as read on scroll:** an item is marked read once its bottom edge goes above
   the top of the window (below the top bar on phones), after it has been on screen.
@@ -102,6 +104,62 @@ items are listed newest first.
   ends up read like the others.
 - Feed HTML is sanitized on the server, and a Content Security Policy blocks any
   script that is not the app's own.
+
+## Search
+
+Search, under Saved in the sidebar, finds the items whose title, author or text has
+every word given, or a word starting with it from three letters on ("swift" finds
+"SwiftUI"), whatever the case and accents ("cafe" finds "Café"). Results are listed
+newest first, read or not, and are not marked read on scroll. It covers what the
+server keeps: the last 10 weeks, and saved items.
+
+It uses PostgreSQL's full-text search: the words of each item (HTML tags and links
+left out, no stemming, so it works the same in every language) are kept in an index
+of their own, updated when items are added or changed. Only the first 64,000
+characters of an article's text count: PostgreSQL limits how many words one item
+may index. The first start after the update indexes every stored item, which takes a
+moment on a large database.
+
+Ignoring accents needs PostgreSQL's `unaccent` extension, which the migration
+installs. If the database user may not install it, the migration says so in a notice
+and search keeps the accents. To add it later, run as a PostgreSQL superuser, in the
+database (`reader` is v2's schema; if `unaccent` is already installed in another
+schema, name that one in the second statement):
+
+```sql
+CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA reader;
+ALTER TEXT SEARCH CONFIGURATION reader.fever_search
+    ALTER MAPPING FOR word, hword, hword_part, numword, numhword, hword_numpart
+    WITH reader.unaccent, simple;
+UPDATE reader.item_search s SET search = reader.search_vector(i.title, i.author, i.content)
+FROM reader.items i WHERE i.id = s.item_id;
+```
+
+## Managing feeds and groups
+
+Settings (the sliders button next to the logo) lists the groups and feeds, with each
+feed's state, and holds the reading preferences. The pencil button above a group's
+or a feed's list opens its settings.
+
+- **Adding a feed:** give the address of the feed, or of the site: a site's page
+  usually links to its feed. If it links to several (posts and comments, say), you
+  choose. An address without `http://` is tried with `https://`. The feed's items
+  are stored right away, as unread, back to the 10-week retention period.
+- **A feed's settings:** its name (empty to use the feed's own title), address,
+  groups, display options, and a username and password for feeds behind a login
+  (the username may be empty, for feeds that only want a token). A new address or
+  login is fetched again right away. A login given with a site's address is not
+  kept if the site's feed is on another site.
+- **Unsubscribing** deletes the feed's items, saved ones included, as in Fever.
+  Deleting a group keeps its feeds.
+- **OPML:** export writes every feed, by group, for another reader. Import adds the
+  feeds you do not have yet (fetched in the background) and puts feeds in the
+  file's groups, creating the groups that do not exist, empty ones included. Files
+  in UTF-8, ISO-8859-1, ISO-8859-15 and Windows-1252 are read.
+- The password is changed on the server with `fever set-password`.
+
+Fever's blacklist is not carried over: it only kept links out of Hot, which v2 does
+not have.
 
 ## Phones and the installed app
 
@@ -158,16 +216,18 @@ make dev-import
 ```
 
 Other tasks: `make test` (Go vet and tests; set `TEST_DATABASE_URL` to a scratch
-database to include the end-to-end refresh test, which wipes the v2 tables there), `make web-check` (svelte-check and
-service worker types), `make generate` (regenerates `internal/store` from the SQL in
-`internal/db/queries` with sqlc, and `web/src/lib/api/types.ts` from
-`internal/apitypes` with tygo). sqlc and tygo are pinned in `tools/go.mod`.
+database to include the database tests, which wipe the v2 tables there), `make
+web-check` (svelte-check and service worker types), `make generate` (regenerates
+`internal/store` from the SQL in `internal/db/queries` with sqlc, and
+`web/src/lib/api/types.ts` from `internal/apitypes` with tygo, formatted with
+Prettier). sqlc and tygo are pinned in `tools/go.mod`.
 
 `make browser-test` checks what only a browser can: the service worker (offline
 start, server down behind nginx, slow server, updates), installability, the install
-button, the phone gestures, and reading while things go wrong (counts that cannot be
+button, the phone gestures, reading while things go wrong (counts that cannot be
 reloaded, a refresh in progress, "mark all as read" right after a change, a session
-that has ended). It builds two versions of the app and runs them with
+that has ended), adding, renaming and removing a feed, and searching. It builds two
+versions of the app and runs them with
 nginx, the fake dataset and a headless Chromium in throwaway podman containers,
 removed afterwards. The checks are in `dev/browsertest` (a separate Go module, so
 the server does not depend on chromedp).

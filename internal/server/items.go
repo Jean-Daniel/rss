@@ -3,26 +3,22 @@ package server
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"fever/internal/apitypes"
 	"fever/internal/store"
 )
 
-// readingDefaults are used where a feed or group sets nothing. They are the
-// settings of the old Fever installation: full articles with images, oldest
-// first, unread items only, marked read on scroll, 20 at a time.
-var readingDefaults = apitypes.Defaults{
-	OldestFirst: true,
-	ShowImages:  true,
-	ShowRead:    false,
-	AutoRead:    true,
-	PageSize:    20,
-}
-
 const (
+	// pageSize is how many items a list shows at a time, as in Fever.
+	pageSize    = 20
 	maxPageSize = 100
+	// maxSearch caps what can be searched for, in characters (as the
+	// search field counts them).
+	maxSearch   = 200
 	maxStateIDs = 1000
 )
 
@@ -75,8 +71,8 @@ func (c *stateChanges) settledAt() time.Time {
 	return t
 }
 
-// listItems answers GET /api/items?scope=all|saved|group|feed&id=…&unread=1
-// &order=oldest|newest&after=<cursor>&limit=…
+// listItems answers GET /api/items?scope=all|saved|search|group|feed&id=…
+// &q=…&unread=1&order=oldest|newest&after=<cursor>&limit=…
 func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var sq store.StreamQuery
@@ -84,6 +80,12 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 	case "", "all":
 	case "saved":
 		sq.SavedOnly = true
+	case "search":
+		sq.Search = strings.TrimSpace(q.Get("q"))
+		if sq.Search == "" || utf8.RuneCountInString(sq.Search) > maxSearch {
+			writeError(w, http.StatusBadRequest, "Enter up to 200 characters to search for.")
+			return
+		}
 	case "feed", "group":
 		id, err := strconv.ParseInt(q.Get("id"), 10, 64)
 		if err != nil {
@@ -99,11 +101,11 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Unknown scope.")
 		return
 	}
-	// Saved items are listed whether read or not.
-	sq.UnreadOnly = q.Get("unread") == "1" && !sq.SavedOnly
+	// Saved items and search results are listed whether read or not.
+	sq.UnreadOnly = q.Get("unread") == "1" && !sq.SavedOnly && sq.Search == ""
 	sq.OldestFirst = q.Get("order") == "oldest"
 
-	limit := readingDefaults.PageSize
+	limit := pageSize
 	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 || n > maxPageSize {

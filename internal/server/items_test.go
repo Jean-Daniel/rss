@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 	"fever/internal/auth"
 	"fever/internal/config"
 	"fever/internal/db"
+	"fever/internal/feeds"
 	"fever/internal/store"
 )
 
@@ -26,7 +29,12 @@ type idleRefresher struct{}
 
 func (idleRefresher) RefreshAll(context.Context) error                 { return nil }
 func (idleRefresher) RefreshFeed(context.Context, int64) (bool, error) { return true, nil }
+func (idleRefresher) Wake()                                            {}
 func (idleRefresher) Busy() bool                                       { return false }
+func (idleRefresher) Discover(context.Context, string, *string, *string) (*feeds.Found, []feeds.Choice, error) {
+	return nil, nil, errors.New("not available in tests")
+}
+func (idleRefresher) Subscribed(context.Context, int64, *feeds.Found) {}
 
 // apiClient talks to a test server with a session cookie.
 type apiClient struct {
@@ -106,7 +114,7 @@ func TestItemsAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = pool.Exec(ctx, `
-		TRUNCATE items, expired_items, feed_groups, feeds, groups, favicons, sessions, devices;
+		TRUNCATE items, item_search, expired_items, feed_groups, feeds, groups, favicons, sessions, devices;
 		INSERT INTO feeds (id, url) VALUES (1, 'https://a.example/feed'), (2, 'https://b.example/feed');
 		INSERT INTO groups (id, title) VALUES (1, 'G');
 		INSERT INTO feed_groups VALUES (2, 1);
@@ -141,7 +149,8 @@ func TestItemsAPI(t *testing.T) {
 		t.Fatalf("login: %d %s", status, body)
 	}
 
-	for _, bad := range []string{"scope=bogus", "scope=feed", "scope=feed&id=1&after=nope", "limit=0", "limit=500"} {
+	for _, bad := range []string{"scope=bogus", "scope=feed", "scope=feed&id=1&after=nope", "limit=0", "limit=500",
+		"scope=search", "scope=search&q=+", "scope=search&q=" + strings.Repeat("%C3%A9", 201)} {
 		if status, _ := c.do("GET", "/api/items?"+bad, nil); status != http.StatusBadRequest {
 			t.Errorf("GET /api/items?%s: %d, want 400", bad, status)
 		}
@@ -159,6 +168,12 @@ func TestItemsAPI(t *testing.T) {
 	if got := ids(c.items("scope=feed&id=1&order=oldest&unread=1")); !sameIDs(got, []int64{1, 2, 3, 4}) {
 		t.Errorf("oldest unread = %v", got)
 	}
+	// Search results are listed whether read or not (none here: no titles).
+	if page := c.items("scope=search&q=anything&unread=1"); len(page.Items) != 0 || page.Next != nil {
+		t.Errorf("search = %v", ids(page))
+	}
+	// 200 characters, whatever their size in bytes.
+	c.items("scope=search&q=" + strings.Repeat("%C3%A9", 200))
 	// Saved lists ignore the unread filter: item 5 is read and saved.
 	if got := ids(c.items("scope=saved&unread=1")); !sameIDs(got, []int64{5}) {
 		t.Errorf("saved = %v", got)

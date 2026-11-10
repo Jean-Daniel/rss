@@ -10,13 +10,18 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // StreamQuery selects a page of items.
 type StreamQuery struct {
-	FeedID      *int64 // only this feed
-	GroupID     *int64 // only feeds in this group
-	SavedOnly   bool
+	FeedID    *int64 // only this feed
+	GroupID   *int64 // only feeds in this group
+	SavedOnly bool
+	// Search keeps the items that have these words (see search_query in
+	// the migrations).
+	Search      string
 	UnreadOnly  bool
 	OldestFirst bool
 	After       *Cursor // continue after this item
@@ -78,6 +83,14 @@ func (q *Queries) ItemStream(ctx context.Context, s StreamQuery) ([]StreamItem, 
 	if s.SavedOnly {
 		where = append(where, "i.saved_at IS NOT NULL")
 	}
+	with, from := "", "items i"
+	if s.Search != "" {
+		// The matching items first, from the index, then their page. Left
+		// to choose, PostgreSQL may instead walk all items newest first,
+		// reading each item's words on the way to the few that match.
+		with = "WITH found AS MATERIALIZED (SELECT item_id FROM item_search WHERE search @@ search_query(" + arg(s.Search) + ")) "
+		from = "found f JOIN items i ON i.id = f.item_id"
+	}
 	if s.UnreadOnly {
 		where = append(where, "i.read_at IS NULL")
 	}
@@ -90,14 +103,20 @@ func (q *Queries) ItemStream(ctx context.Context, s StreamQuery) ([]StreamItem, 
 	}
 
 	var sql strings.Builder
-	sql.WriteString(`SELECT i.id, i.feed_id, i.title, i.url, i.author, i.content, i.published_at,
+	sql.WriteString(with + `SELECT i.id, i.feed_id, i.title, i.url, i.author, i.content, i.published_at,
 	                        i.read_at IS NOT NULL, i.saved_at IS NOT NULL
-	                 FROM items i`)
+	                 FROM ` + from)
 	if len(where) > 0 {
 		sql.WriteString(" WHERE " + strings.Join(where, " AND "))
 	}
 	fmt.Fprintf(&sql, " ORDER BY i.published_at %s, i.id %s LIMIT %s", dir, dir, arg(s.Limit))
 
+	if s.Search != "" {
+		// Planned with the words searched for, never with a plan made for
+		// any words: search_query is then worked out once, while planning,
+		// not for each row the plan may read.
+		args = append([]any{pgx.QueryExecModeExec}, args...)
+	}
 	rows, err := q.db.Query(ctx, sql.String(), args...)
 	if err != nil {
 		return nil, err

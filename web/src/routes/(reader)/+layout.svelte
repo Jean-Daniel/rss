@@ -7,7 +7,13 @@
 	import { install } from '#lib/install.svelte.ts';
 	import { itemState, withLocalCounts } from '#lib/item-state.svelte.ts';
 	import SourceList from '#lib/components/SourceList.svelte';
-	import { contextGroup, selectionFrom, selectionTitle, unreadOf } from '#lib/selection.ts';
+	import {
+		contextGroup,
+		editHref,
+		selectionFrom,
+		selectionTitle,
+		unreadOf
+	} from '#lib/selection.ts';
 	import { setShownSubscriptions } from '#lib/subscriptions.ts';
 	import { swipeToClose } from '#lib/swipe.ts';
 	import { ago } from '#lib/time.ts';
@@ -27,6 +33,7 @@
 		group ? subs.feeds.filter((f) => group.feedIds.includes(f.id)) : subs.feeds
 	);
 	const title = $derived(selectionTitle(selection));
+	const edit = $derived(editHref(selection));
 	const unread = $derived(unreadOf(selection, subs));
 
 	const failing = $derived(subs.feeds.filter((f) => f.error !== null).length);
@@ -101,6 +108,17 @@
 
 <svelte:window {onkeydown} />
 
+{#snippet editButton()}
+	{#if edit}
+		{@const what = selection.kind === 'group' ? 'group' : 'feed'}
+		<a class="icon-button" href={edit} title="Edit this {what}" aria-label="Edit this {what}">
+			<svg viewBox="0 0 18 18" aria-hidden="true">
+				<path d="M11.5 3.5l3 3L6 15H3v-3zM9.5 5.5l3 3" />
+			</svg>
+		</a>
+	{/if}
+{/snippet}
+
 {#snippet refreshButton()}
 	<button
 		class="icon-button refresh"
@@ -135,6 +153,7 @@
 			<button onclick={scrollToTop} title="Back to the top">{title}</button>
 		</h1>
 		{#if unread > 0}<span class="topbar-count">{unread}</span>{/if}
+		{@render editButton()}
 		{@render refreshButton()}
 	</header>
 
@@ -149,11 +168,26 @@
 		<div class="sidebar">
 			<div class="brand">
 				<a href="/" class="logo" aria-label="Fever, all items">fever<span>°</span></a>
-				<button class="icon-button" onclick={logout} title="Log out" aria-label="Log out">
-					<svg viewBox="0 0 18 18" aria-hidden="true">
-						<path d="M7 3H3v12h4M12 5l4 4-4 4M16 9H7" />
-					</svg>
-				</button>
+				<span class="brand-actions">
+					<a
+						class="icon-button"
+						href="/settings"
+						title="Settings: feeds, groups, preferences"
+						aria-label="Settings"
+						aria-current={page.route.id === '/(reader)/settings' ? 'page' : undefined}
+					>
+						<svg viewBox="0 0 18 18" aria-hidden="true">
+							<path d="M3 5h5M12 5h3M3 13h3M10 13h5" />
+							<circle cx="10" cy="5" r="2" />
+							<circle cx="8" cy="13" r="2" />
+						</svg>
+					</a>
+					<button class="icon-button" onclick={logout} title="Log out" aria-label="Log out">
+						<svg viewBox="0 0 18 18" aria-hidden="true">
+							<path d="M7 3H3v12h4M12 5l4 4-4 4M16 9H7" />
+						</svg>
+					</button>
+				</span>
 			</div>
 			<SourceList {subs} {selection} />
 			<div class="status">
@@ -191,6 +225,9 @@
 		<header class="content-header">
 			<h1>{title}</h1>
 			{#if unread > 0}<span class="unread">{unread} unread</span>{/if}
+			<span class="header-actions">
+				{@render editButton()}
+			</span>
 			<button
 				class="icon-button labeled feeds-toggle"
 				onclick={() => ui.toggleFeeds()}
@@ -330,8 +367,17 @@
 		white-space: nowrap;
 	}
 
-	.feeds-toggle {
+	.header-actions {
 		margin-left: auto;
+	}
+
+	.brand-actions {
+		display: flex;
+	}
+
+	.brand-actions [aria-current='page'] {
+		background: var(--row-hover);
+		color: var(--text);
 	}
 
 	.feeds-toggle[aria-pressed='true'] {

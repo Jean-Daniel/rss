@@ -11,3 +11,20 @@ server {
         proxy_set_header Host $http_host;
     }
 }
+
+# A web site with a feed, to subscribe to (the app may fetch private
+# addresses in the test). Its entries have no date: they are dated when
+# fetched, so they are never too old to be kept.
+server {
+    listen 8081;
+
+    location = / {
+        default_type text/html;
+        return 200 '<!doctype html><html><head><title>Test site</title><link rel="alternate" type="application/rss+xml" title="Posts" href="/feed.xml"></head><body>Test site</body></html>';
+    }
+
+    location = /feed.xml {
+        default_type application/rss+xml;
+        return 200 '<?xml version="1.0"?><rss version="2.0"><channel><title>Browser test feed</title><link>http://fever-browsertest-proxy:8081/</link><item><title>First test post</title><guid>bt-1</guid><description>One</description></item><item><title>Second test post</title><guid>bt-2</guid><description>Two</description></item></channel></rss>';
+    }
+}

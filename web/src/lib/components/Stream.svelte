@@ -84,10 +84,12 @@
 	const seen = new WeakSet<Element>();
 	let observer = $state<IntersectionObserver | undefined>();
 
+	// Saved items and search results are browsed, not read through: they are
+	// not marked read on scroll (as in Fever), and have no Unread/All or
+	// "mark all as read".
+	const browsing = scope.kind === 'saved' || scope.kind === 'search';
 	// A boolean, so the observer is not rebuilt each time the counts reload.
-	// Never in the Saved list: browsing saved items does not read them, as
-	// in Fever.
-	const autoRead = $derived(subs.defaults.autoRead && scope.kind !== 'saved');
+	const autoRead = $derived(subs.defaults.autoRead && !browsing);
 	$effect(() => {
 		if (!autoRead) return;
 		void phone.current; // the top bar only exists on phones
@@ -165,7 +167,7 @@
 	}
 
 	async function markAllRead() {
-		if (scope.kind === 'saved') return;
+		if (browsing) return;
 		const label = unread === 1 ? '1 item' : `${unread} items`;
 		if (!confirm(`Mark ${label} as read?`)) return;
 		try {
@@ -228,7 +230,7 @@
 	$effect(() => onResume(() => void syncChanges()));
 </script>
 
-{#if scope.kind !== 'saved'}
+{#if !browsing}
 	<div class="toolbar">
 		<div class="segmented" role="group" aria-label="Items to show">
 			<button aria-pressed={options.unreadOnly} onclick={() => showRead(false)}>Unread</button>
@@ -244,6 +246,8 @@
 	<div class="empty">
 		{#if scope.kind === 'saved'}
 			<p>No saved items. Save an item with its bookmark button to keep it here.</p>
+		{:else if scope.kind === 'search'}
+			<p>Nothing found for “{scope.q}”.</p>
 		{:else if options.unreadOnly}
 			<p>No unread items.</p>
 		{:else}
@@ -278,7 +282,13 @@
 	{:else}
 		<!-- Room to scroll the last items past the top, so they get marked read too. -->
 		<div class="end" class:room={autoRead}>
-			<p>{scope.kind === 'saved' ? 'No more saved items.' : 'You have reached the end.'}</p>
+			<p>
+				{scope.kind === 'saved'
+					? 'No more saved items.'
+					: scope.kind === 'search'
+						? 'No more results.'
+						: 'You have reached the end.'}
+			</p>
 		</div>
 	{/if}
 {/if}

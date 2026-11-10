@@ -42,6 +42,7 @@ browser-test:
 generate:
 	$(GO_TOOL) sqlc generate
 	$(GO_TOOL) tygo generate
+	web/npm exec -- prettier --log-level warn --write src/lib/api/types.ts
 
 # A local binary with the front end embedded (needs web-build first).
 build-bin: web-build

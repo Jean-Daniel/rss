@@ -52,12 +52,31 @@ func (e *httpError) Error() string {
 	return fmt.Sprintf("The site answered HTTP %d %s.", e.status, text)
 }
 
+// errNotAFeed is the answer of an address that is not a feed's.
+var errNotAFeed = errors.New("The address does not return a feed (it may be a web page).")
+
 // fetch downloads and parses one feed, using its validators so unchanged
 // feeds cost a single short response.
 func fetch(ctx context.Context, client *http.Client, f store.DueFeedsRow) (*fetchResult, error) {
+	result, body, err := download(ctx, client, f)
+	if err != nil || result.notModified {
+		return result, err
+	}
+	feed, err := parseFeed(body)
+	if err != nil {
+		return nil, err
+	}
+	result.feed = feed
+	result.size = len(body)
+	return result, nil
+}
+
+// download requests a feed and reads the answer, which may not be a feed.
+// The body is nil when the feed has not changed.
+func download(ctx context.Context, client *http.Client, f store.DueFeedsRow) (*fetchResult, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, NormalizeURL(f.Url), nil)
 	if err != nil {
-		return nil, fmt.Errorf("The feed address is not valid: %w", err)
+		return nil, nil, fmt.Errorf("The feed address is not valid: %w", err)
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/feed+json, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.8")
@@ -77,7 +96,7 @@ func fetch(ctx context.Context, client *http.Client, f store.DueFeedsRow) (*fetc
 
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, describeNetError(err)
+		return nil, nil, describeNetError(err)
 	}
 	defer res.Body.Close()
 
@@ -89,28 +108,30 @@ func fetch(ctx context.Context, client *http.Client, f store.DueFeedsRow) (*fetc
 	switch {
 	case res.StatusCode == http.StatusNotModified:
 		result.notModified = true
-		return result, nil
+		return result, nil, nil
 	case res.StatusCode != http.StatusOK:
-		return nil, &httpError{status: res.StatusCode, retryAfter: parseRetryAfter(res.Header.Get("Retry-After"))}
+		return nil, nil, &httpError{status: res.StatusCode, retryAfter: parseRetryAfter(res.Header.Get("Retry-After"))}
 	}
 
 	body, err := readLimited(res.Body, maxFeedBytes)
 	if errors.Is(err, errTooLarge) {
-		return nil, fmt.Errorf("The feed is larger than %d MB.", maxFeedBytes>>20)
+		return nil, nil, fmt.Errorf("The feed is larger than %d MB.", maxFeedBytes>>20)
 	}
 	if err != nil {
-		return nil, describeNetError(err)
+		return nil, nil, describeNetError(err)
 	}
+	return result, body, nil
+}
+
+func parseFeed(body []byte) (*gofeed.Feed, error) {
 	feed, err := gofeed.NewParser().Parse(bytes.NewReader(body))
 	if err != nil {
 		if errors.Is(err, gofeed.ErrFeedTypeNotDetected) {
-			return nil, errors.New("The address does not return a feed (it may be a web page).")
+			return nil, errNotAFeed
 		}
 		return nil, fmt.Errorf("The feed could not be read: %v", err)
 	}
-	result.feed = feed
-	result.size = len(body)
-	return result, nil
+	return feed, nil
 }
 
 // validator returns an ETag or Last-Modified value that can be stored and

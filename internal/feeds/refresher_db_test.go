@@ -38,7 +38,7 @@ func openTestDB(t *testing.T) (*pgxpool.Pool, *slog.Logger) {
 	if err := db.Migrate(ctx, pool, log); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `TRUNCATE items, expired_items, feed_groups, feeds, groups, favicons`); err != nil {
+	if _, err := pool.Exec(ctx, `TRUNCATE items, item_search, expired_items, feed_groups, feeds, groups, favicons`); err != nil {
 		t.Fatal(err)
 	}
 	return pool, log

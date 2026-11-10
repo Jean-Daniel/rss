@@ -81,6 +81,11 @@ type Item struct {
 	StateChangedAt time.Time
 }
 
+type ItemSearch struct {
+	ItemID int64
+	Search interface{}
+}
+
 type Session struct {
 	TokenHash  []byte
 	CreatedAt  time.Time
@@ -93,4 +98,8 @@ type Setting struct {
 	ID           bool
 	PasswordHash *string
 	UpdatedAt    time.Time
+	OldestFirst  bool
+	ShowImages   bool
+	ShowRead     bool
+	AutoRead     bool
 }

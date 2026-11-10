@@ -5,7 +5,11 @@ import { showReadPref } from './prefs.ts';
 import { contextGroup, selectionFrom, type Selection } from './selection.ts';
 
 /** Which items a list shows. */
-export type Scope = { kind: 'all' } | { kind: 'saved' } | { kind: 'group' | 'feed'; id: number };
+export type Scope =
+	| { kind: 'all' }
+	| { kind: 'saved' }
+	| { kind: 'search'; q: string }
+	| { kind: 'group' | 'feed'; id: number };
 
 /** How a list is shown: the feed's options, else its group's, else the defaults. */
 export interface StreamOptions {
@@ -19,10 +23,13 @@ export function scopeOf(sel: Selection): Scope | null {
 		case 'all':
 		case 'saved':
 			return { kind: sel.kind };
+		case 'search':
+			return sel.q ? { kind: 'search', q: sel.q } : null;
 		case 'group':
 			return { kind: 'group', id: sel.group.id };
 		case 'feed':
 			return { kind: 'feed', id: sel.feed.id };
+		case 'manage':
 		case 'missing':
 			return null;
 	}
@@ -30,8 +37,8 @@ export function scopeOf(sel: Selection): Scope | null {
 
 export function optionsFor(sel: Selection, subs: Subscriptions, showRead: boolean): StreamOptions {
 	const d = subs.defaults;
-	if (sel.kind === 'saved') {
-		// Saved items: all of them, most recent first.
+	if (sel.kind === 'saved' || sel.kind === 'search') {
+		// Saved items and search results: all of them, most recent first.
 		return { unreadOnly: false, oldestFirst: false, showImages: d.showImages };
 	}
 	const group = contextGroup(sel);
@@ -49,6 +56,7 @@ export function itemsURL(scope: Scope, opts: StreamOptions, after?: string | nul
 		order: opts.oldestFirst ? 'oldest' : 'newest'
 	});
 	if (scope.kind === 'group' || scope.kind === 'feed') q.set('id', String(scope.id));
+	if (scope.kind === 'search') q.set('q', scope.q);
 	if (opts.unreadOnly) q.set('unread', '1');
 	if (after) q.set('after', after);
 	return `/api/items?${q}`;

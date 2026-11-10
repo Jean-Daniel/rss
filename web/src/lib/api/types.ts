@@ -57,17 +57,7 @@ export interface Subscriptions {
 	 */
 	defaults: Defaults;
 }
-export interface Defaults {
-	oldestFirst: boolean;
-	showImages: boolean;
-	/**
-	 * ShowRead lists read items too, not only unread ones.
-	 */
-	showRead: boolean;
-	/**
-	 * AutoRead marks items read as they scroll out of view.
-	 */
-	autoRead: boolean;
+export interface Defaults extends Preferences {
 	pageSize: number /* int */;
 }
 /**
@@ -77,19 +67,13 @@ export interface Defaults {
 export interface RefreshRequest {
 	feedId: number /* int64 */ | null;
 }
-export interface Group {
+export interface Group extends DisplayOptions {
 	id: number /* int64 */;
 	title: string;
 	unread: number /* int64 */;
 	feedIds: number /* int64 */[];
-	/**
-	 * Display options; null when the global preference applies.
-	 */
-	showUnreadCount: boolean | null;
-	showImages: boolean | null;
-	oldestFirst: boolean | null;
 }
-export interface Feed {
+export interface Feed extends DisplayOptions {
 	id: number /* int64 */;
 	title: string;
 	url: string;
@@ -97,12 +81,6 @@ export interface Feed {
 	faviconId: number /* int64 */ | null;
 	unread: number /* int64 */;
 	groupIds: number /* int64 */[];
-	/**
-	 * Display options; null when the group's or the global one applies.
-	 */
-	showUnreadCount: boolean | null;
-	showImages: boolean | null;
-	oldestFirst: boolean | null;
 	/**
 	 * Error is the last fetch problem, if any.
 	 */
@@ -181,4 +159,121 @@ export interface ItemChange {
 	id: number /* int64 */;
 	read: boolean;
 	saved: boolean;
+}
+/**
+ * Preferences is the body of PUT /api/preferences: the reading preferences
+ * used where a group or feed sets nothing (Subscriptions.Defaults).
+ */
+export interface Preferences {
+	oldestFirst: boolean;
+	showImages: boolean;
+	/**
+	 * ShowRead lists read items too, not only unread ones, on devices where
+	 * the reader has not chosen between Unread and All.
+	 */
+	showRead: boolean;
+	/**
+	 * AutoRead marks items read as they scroll out of view.
+	 */
+	autoRead: boolean;
+}
+/**
+ * DisplayOptions are a group's or a feed's own reading options; null means
+ * the next level applies (the group's, then the preferences).
+ */
+export interface DisplayOptions {
+	showImages: boolean | null;
+	oldestFirst: boolean | null;
+	showUnreadCount: boolean | null;
+}
+/**
+ * AddFeedRequest is the body of POST /api/feeds. URL may be a web page that
+ * links to its feed.
+ */
+export interface AddFeedRequest {
+	url: string;
+	groupIds: number /* int64 */[];
+	/**
+	 * Username and Password are for feeds behind a login; null otherwise.
+	 * The username may be empty when the feed only wants a password.
+	 */
+	username: string | null;
+	password: string | null;
+}
+/**
+ * AddFeedResponse answers POST /api/feeds. Either FeedID is set (the new
+ * feed, or the one already subscribed to when Existing), or Choices lists the
+ * feeds a web page links to: ask again with one of their URLs.
+ */
+export interface AddFeedResponse {
+	feedId: number /* int64 */ | null;
+	existing: boolean;
+	choices: FeedChoice[] | null;
+}
+export interface FeedChoice {
+	url: string;
+	title: string;
+}
+/**
+ * FeedSettings answers GET /api/feeds/{id}: what the feed's settings page
+ * shows besides Subscriptions.
+ */
+export interface FeedSettings extends DisplayOptions {
+	id: number /* int64 */;
+	/**
+	 * Title is the stored title: the reader's, or the feed's own. Empty
+	 * until the feed has been fetched.
+	 */
+	title: string;
+	url: string;
+	groupIds: number /* int64 */[];
+	username: string | null;
+	hasPassword: boolean;
+	itemCount: number /* int64 */;
+	savedCount: number /* int64 */;
+}
+/**
+ * FeedUpdate is the body of PUT /api/feeds/{id}.
+ */
+export interface FeedUpdate extends DisplayOptions {
+	/**
+	 * Title is empty to use the feed's own.
+	 */
+	title: string;
+	url: string;
+	groupIds: number /* int64 */[];
+	/**
+	 * Username is null when the feed needs no login. It may be empty: some
+	 * feeds only want a password (a token).
+	 */
+	username: string | null;
+	/**
+	 * Password replaces the stored one when not null.
+	 */
+	password: string | null;
+}
+/**
+ * GroupUpdate is the body of POST /api/groups and PUT /api/groups/{id}.
+ */
+export interface GroupUpdate extends DisplayOptions {
+	title: string;
+	feedIds: number /* int64 */[];
+}
+/**
+ * Created answers a POST that created something.
+ */
+export interface Created {
+	id: number /* int64 */;
+}
+/**
+ * OPMLImport answers POST /api/opml (the body is the OPML file).
+ */
+export interface OPMLImport {
+	feedsAdded: number /* int */;
+	feedsKnown: number /* int */;
+	groupsAdded: number /* int */;
+	/**
+	 * Skipped counts entries whose address is not a web address.
+	 */
+	skipped: number /* int */;
 }

@@ -30,7 +30,8 @@
 					class:read={group.unread === 0}
 					aria-current={current(
 						(selection.kind === 'group' && selection.group.id === group.id) ||
-							(selection.kind === 'feed' && selection.group?.id === group.id)
+							((selection.kind === 'feed' || selection.kind === 'manage') &&
+								selection.group?.id === group.id)
 					)}
 				>
 					<span class="label">{group.title}</span>
@@ -51,6 +52,14 @@
 				</svg>
 				<span class="label">Saved</span>
 				{#if subs.savedCount > 0}<span class="count">{subs.savedCount}</span>{/if}
+			</a>
+		</li>
+		<li>
+			<a href="/search" class="read" aria-current={current(selection.kind === 'search')}>
+				<svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true">
+					<circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" />
+				</svg>
+				<span class="label">Search</span>
 			</a>
 		</li>
 	</ul>

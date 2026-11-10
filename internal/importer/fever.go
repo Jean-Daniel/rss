@@ -102,7 +102,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger, opts Options
 	if opts.Replace {
 		log.Info("replacing the v2 data: a running v2 server waits until the import is finished")
 	}
-	if _, err := tx.Exec(ctx, `TRUNCATE items, expired_items, feed_groups, feeds, groups, favicons`); err != nil {
+	if _, err := tx.Exec(ctx, `TRUNCATE items, item_search, expired_items, feed_groups, feeds, groups, favicons`); err != nil {
 		return st, err
 	}
 
@@ -409,8 +409,9 @@ func decodeAuth(auth string) (user, pass *string) {
 	if err != nil {
 		return nil, nil
 	}
+	// The username may be empty: some feeds only want a password.
 	u, p, found := strings.Cut(string(raw), ":")
-	if !found || u == "" {
+	if !found || u == "" && p == "" {
 		return nil, nil
 	}
 	return &u, &p
