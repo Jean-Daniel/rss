@@ -279,7 +279,7 @@
 	.content {
 		padding: 12px 24px 24px;
 		font-family: var(--font-reading);
-		font-size: 17.5px;
+		font-size: 14px;
 		line-height: 1.62;
 		overflow-wrap: break-word;
 	}
