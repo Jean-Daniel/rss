@@ -4,6 +4,7 @@
 	--page: #f2f2f0;
 	--surface: #fff;
 	--surface-tint: #f7f7f5; /* the source band of an item */
+	--unread-tint: #e6eef9; /* the source band of an unread item */
 	--text: #1d1d1f;
 	--text-muted: #5e5e63;
 	--text-faint: #8b8b90;
@@ -49,6 +50,7 @@
 		--page: #161618;
 		--surface: #222224;
 		--surface-tint: #29292c;
+		--unread-tint: #1f2a3a;
 		--text: #ececee;
 		--text-muted: #a9a9ae;
 		--text-faint: #7d7d83;

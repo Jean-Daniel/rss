@@ -162,7 +162,7 @@
 		</select>
 	</label>
 	<p class="hint">
-		On each device, the Unread and All buttons above a list change this, and the device keeps its
+		On each device, "Show read items" in a list's menu changes this, and the device keeps its
 		choice.
 	</p>
 	<label class="check">

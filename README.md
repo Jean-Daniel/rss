@@ -85,7 +85,7 @@ modified" answer. The refresh button in the sidebar makes every feed due at once
 ## Reading
 
 Lists show unread items, oldest first, full articles with images, 20 at a time, as
-the old Fever setup did; "All" shows read items too (remembered per device). These
+the old Fever setup did; "Show read items" shows them too (remembered per device). These
 defaults can be changed in Settings, and each group or feed can set its own order,
 images and unread count. Saved items are listed newest first.
 
@@ -177,8 +177,11 @@ feeds and items, `1` and `4` (Hot, Sparks), `B` (blacklist) and `0` (excerpts).
 ## Managing feeds and groups
 
 Settings (the sliders button next to the logo) lists the groups and feeds, with each
-feed's state, and holds the reading preferences. The pencil button above a group's
-or a feed's list opens its settings.
+feed's state, and holds the reading preferences.
+
+Each list has a small menu (the ⋯ button next to its title, in the top bar on phones):
+show or hide read items, mark all as read, edit the group or feed, show or hide the
+feed list, and the keyboard shortcuts.
 
 - **Adding a feed:** give the address of the feed, or of the site: a site's page
   usually links to its feed. If it links to several (posts and comments, say), you

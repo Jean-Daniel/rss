@@ -48,11 +48,21 @@ const (
 	drawerOpen   = `document.querySelector('.shell').classList.contains('drawer-open')`
 	installMatch = `[...document.querySelectorAll('button')].find(b => b.textContent.includes('Install app'))`
 	itemsShown   = readerShown + ` && document.querySelectorAll('.item').length > 0`
-	firstSave    = `document.querySelector('.item .action.save')`
-	firstToggle  = `document.querySelector('.item .action.read-toggle')`
-	savedCount   = `(document.querySelector('a[href="/saved"] .count')?.textContent.trim() ?? '0')`
-	allSent      = `localStorage.getItem('fever.pendingReads') === null`
-	noAlerts     = `window.__test.alerts.length === 0`
+	// A promise of the menu item of the list's menu (opened first, then drawn)
+	// whose text starts so, or null.
+	menuItem = `(async (label) => {
+		const button = [...document.querySelectorAll('.list-menu > button')].find(b => b.offsetParent);
+		if (button && button.getAttribute('aria-expanded') !== 'true') {
+			button.click();
+			await new Promise((done) => setTimeout(done, 50));
+		}
+		return [...document.querySelectorAll('.list-menu [role="menuitem"]')].find(i => i.textContent.trim().startsWith(label)) ?? null;
+	})`
+	firstSave   = `document.querySelector('.item .action.save')`
+	firstToggle = `document.querySelector('.item .action.read-toggle')`
+	savedCount  = `(document.querySelector('a[href="/saved"] .count')?.textContent.trim() ?? '0')`
+	allSent     = `localStorage.getItem('fever.pendingReads') === null`
+	noAlerts    = `window.__test.alerts.length === 0`
 
 	// Runs before the app's own scripts, in every page loaded after it is
 	// added. It records the API calls, and can make /api/subscriptions fail
@@ -436,12 +446,11 @@ func reading(ctx context.Context, secret string) {
 	enabled := eval[bool](ctx, `(async () => {
 		`+firstToggle+`.click();
 		await new Promise(done => setTimeout(done, 100));
-		const all = document.querySelector('.mark-all');
-		const enabled = !all.disabled;
-		all.click();
-		return enabled;
+		const all = await `+menuItem+`('Mark all as read');
+		all?.click();
+		return !!all;
 	})()`)
-	check(enabled, "item marked unread: Mark all as read is available")
+	check(enabled, "item marked unread: Mark all as read is in the list's menu")
 	check(waitFor(ctx, `window.__test.calls.includes('POST /api/items/read-all')`, 5*time.Second), "Mark all as read: sent")
 	order := eval[[]string](ctx, `window.__test.calls.filter(c => c.startsWith('POST /api/items/'))`)
 	check(len(order) >= 2 && order[0] == "POST /api/items/state" && order[1] == "POST /api/items/read-all",
@@ -511,7 +520,7 @@ func manage(ctx context.Context) {
 	check(eval[bool](ctx, `[...document.querySelectorAll('.feeds a')].some(a => a.getAttribute('href') === '`+feed+`')`),
 		"Add a feed: listed with the other feeds")
 
-	do(`document.querySelector('.content-header a[href$="/edit"]').click()`)
+	eval[bool](ctx, `(async () => ((await `+menuItem+`('Edit this feed')).click(), true))()`)
 	const name = `input[placeholder="The feed's own title"]`
 	check(waitFor(ctx, fmt.Sprintf(`!!document.querySelector(%q)`, name), 5*time.Second), "Edit: feed settings shown")
 	fill(name, "Renamed feed")
@@ -552,7 +561,10 @@ func search(ctx context.Context) {
 		"Search: results shown")
 	found := eval[[]string](ctx, titles)
 	check(len(found) == 1 && found[0] == "Second test post", "Search: every word, case and word starts ignored (%q)", found)
-	check(eval[bool](ctx, `!document.querySelector('.toolbar')`), "Search: no Unread/All or Mark all as read")
+	check(eval[bool](ctx, `(async () => { const m = `+menuItem+`; return !(await m('Show read')) && !(await m('Hide read')) && !(await m('Mark all')); })()`),
+		"Search: no Unread/All or Mark all as read in the menu")
+	must(chromedp.Do(ctx, chromedp.KeyEvent(kb.Escape)))
+	check(waitFor(ctx, `!document.querySelector('.list-menu [role="menu"]')`, 2*time.Second), "Esc: the menu closes")
 	query("nothing-like-this")
 	check(waitFor(ctx, `document.querySelector('.empty')?.textContent.includes('Nothing found for')`, 10*time.Second),
 		"Search: nothing found, said so")
@@ -678,7 +690,7 @@ func keyboard(ctx context.Context) {
 		tabs+1, site+"k"+strings.TrimPrefix(cur, "Key item ")), 2*time.Second), "→: the current item (%s) opens", cur)
 
 	// U switches between Unread and All (the reading step left All on).
-	const showing = `([...document.querySelectorAll('.segmented button')].find(b => b.getAttribute('aria-pressed') === 'true')?.textContent ?? '')`
+	const showing = `(localStorage.getItem('fever.showRead') === '1' ? 'All' : 'Unread')`
 	was := eval[string](ctx, showing)
 	press("u")
 	check(waitFor(ctx, fmt.Sprintf(`%s !== '' && %s !== %q`, showing, showing, was), 5*time.Second), "U: from %s to the other", was)

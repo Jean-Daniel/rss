@@ -503,18 +503,7 @@
 	$effect(() => onResume(() => void syncChanges()));
 </script>
 
-{#if !browsing}
-	<div class="toolbar">
-		<div class="segmented" role="group" aria-label="Items to show">
-			<button aria-pressed={options.unreadOnly} onclick={() => showRead(false)}>Unread</button>
-			<button aria-pressed={!options.unreadOnly} onclick={() => showRead(true)}>All</button>
-		</div>
-		<button class="mark-all" onclick={() => markAllRead()} disabled={unread === 0}>
-			Mark all as read
-		</button>
-	</div>
-{/if}
-
+<!-- Unread/All and "mark all as read" are in the list's menu (ListMenu). -->
 {#if items.length === 0}
 	<div class="empty">
 		{#if scope.kind === 'saved'}
@@ -568,66 +557,22 @@
 {/if}
 
 <style>
-	.toolbar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		margin-bottom: 12px;
-	}
-
-	/* Unread / All: a switch, the chosen side raised. */
-	.segmented {
-		display: inline-flex;
-		gap: 2px;
-		padding: 2px;
-		border-radius: calc(var(--radius) + 2px);
-		background: var(--row-selected);
-	}
-
-	.segmented button,
-	.mark-all,
 	.more button {
-		height: 28px;
+		height: 32px;
 		padding: 0 12px;
 		border: 0;
 		border-radius: var(--radius);
 		background: transparent;
+		box-shadow: inset 0 0 0 1px var(--field-line);
 		color: var(--text-muted);
 		font-size: 13px;
 		font-weight: 500;
 		cursor: pointer;
 	}
 
-	.segmented button[aria-pressed='true'] {
-		background: var(--surface);
-		box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
-		color: var(--text);
-	}
-
-	.mark-all,
-	.more button {
-		height: 32px;
-		box-shadow: inset 0 0 0 1px var(--field-line);
-	}
-
-	.mark-all:hover:not(:disabled),
-	.more button:hover,
-	.segmented button:hover:not([aria-pressed='true']) {
+	.more button:hover {
 		background: var(--row-hover);
 		color: var(--text);
-	}
-
-	.mark-all:disabled {
-		opacity: 0.5;
-		cursor: default;
-	}
-
-	@media (pointer: coarse) {
-		.segmented button,
-		.mark-all {
-			height: 40px;
-		}
 	}
 
 	.empty p {

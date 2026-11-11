@@ -128,8 +128,7 @@
 		min-height: 36px;
 		padding: 0px 6px 0px 18px;
 		border-bottom: 1px solid var(--line);
-		/* background: var(--surface-tint); */
-		background: alpha(from var(--accent) / 10%);
+		background: var(--unread-tint); /* read items: see below */
 	}
 
 	.meta {

@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { api } from '#lib/api/client.ts';
 	import type { RefreshRequest, UnreadRecent } from '#lib/api/types.ts';
+	import ListMenu from '#lib/components/ListMenu.svelte';
 	import ShortcutsHelp from '#lib/components/ShortcutsHelp.svelte';
 	import { failure } from '#lib/manage.ts';
 	import { handleKey, shortcuts, type AppKeys } from '#lib/shortcuts.svelte.ts';
@@ -21,7 +22,7 @@
 	import { setShownSubscriptions } from '#lib/subscriptions.ts';
 	import { swipeToClose } from '#lib/swipe.ts';
 	import { ago } from '#lib/time.ts';
-	import { phone, ui, wide } from '#lib/ui.svelte.ts';
+	import { phone, ui } from '#lib/ui.svelte.ts';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
@@ -38,6 +39,7 @@
 	);
 	const title = $derived(selectionTitle(selection));
 	const edit = $derived(editHref(selection));
+	const editLabel = $derived(selection.kind === 'group' ? 'Edit this group' : 'Edit this feed');
 	const unread = $derived(unreadOf(selection, subs));
 
 	const failing = $derived(subs.feeds.filter((f) => f.error !== null).length);
@@ -165,17 +167,6 @@
 
 <ShortcutsHelp />
 
-{#snippet editButton()}
-	{#if edit}
-		{@const what = selection.kind === 'group' ? 'group' : 'feed'}
-		<a class="icon-button" href={edit} title="Edit this {what}" aria-label="Edit this {what}">
-			<svg viewBox="0 0 18 18" aria-hidden="true">
-				<path d="M11.5 3.5l3 3L6 15H3v-3zM9.5 5.5l3 3" />
-			</svg>
-		</a>
-	{/if}
-{/snippet}
-
 {#snippet refreshButton()}
 	<button
 		class="icon-button refresh"
@@ -210,7 +201,7 @@
 			<button onclick={scrollToTop} title="Back to the top">{title}</button>
 		</h1>
 		{#if unread > 0}<span class="topbar-count">{unread}</span>{/if}
-		{@render editButton()}
+		<ListMenu {edit} {editLabel} {unread} />
 		{@render refreshButton()}
 	</header>
 
@@ -283,19 +274,8 @@
 			<h1>{title}</h1>
 			{#if unread > 0}<span class="unread">{unread} unread</span>{/if}
 			<span class="header-actions">
-				{@render editButton()}
+				<ListMenu {edit} {editLabel} {unread} />
 			</span>
-			<button
-				class="icon-button labeled feeds-toggle"
-				onclick={() => ui.toggleFeeds()}
-				aria-pressed={wide.current ? ui.feedsVisible : ui.feedsOverlay}
-				title="Show or hide the feed list"
-			>
-				<svg viewBox="0 0 18 18" aria-hidden="true">
-					<rect x="2" y="3" width="14" height="12" rx="1.5" /><path d="M7 3v12" />
-				</svg>
-				<span>Feeds</span>
-			</button>
 		</header>
 		{@render children()}
 	</main>
@@ -435,10 +415,6 @@
 
 	.brand-actions [aria-current='page'] {
 		background: var(--row-hover);
-		color: var(--text);
-	}
-
-	.feeds-toggle[aria-pressed='true'] {
 		color: var(--text);
 	}
 
