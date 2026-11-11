@@ -125,10 +125,11 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		min-height: 40px;
-		padding: 2px 6px 2px 18px;
+		min-height: 36px;
+		padding: 0px 6px 0px 18px;
 		border-bottom: 1px solid var(--line);
-		background: var(--surface-tint);
+		/* background: var(--surface-tint); */
+		background: alpha(from var(--accent) / 10%);
 	}
 
 	.meta {
@@ -261,6 +262,10 @@
 	}
 
 	/* Read items step back. */
+	.read .source {
+		background: var(--surface-tint);
+	}
+
 	.read .title,
 	.read .title a {
 		font-weight: 500;
