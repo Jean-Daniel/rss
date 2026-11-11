@@ -3,6 +3,7 @@
 package feeds
 
 import (
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -19,7 +20,15 @@ const userAgent = "Fever/2 (personal feed reader)"
 // allowPrivate is set, it refuses to connect to loopback, private and
 // link-local addresses, so a feed (or a redirect in one) cannot make the
 // server query the database container or other internal services.
+//
+// HTTPS servers that leave the intermediate certificate out of their chain
+// are accepted, as browsers accept them (see chainVerifier).
 func newClient(allowPrivate bool) *http.Client {
+	return newClientWithRoots(allowPrivate, nil)
+}
+
+// newClientWithRoots is newClient trusting roots instead of the system's.
+func newClientWithRoots(allowPrivate bool, roots *x509.CertPool) *http.Client {
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 	if !allowPrivate {
 		dialer.Control = denyPrivate
@@ -28,11 +37,11 @@ func newClient(allowPrivate bool) *http.Client {
 		// No proxy: the address check above must see the real destination.
 		Proxy:                 nil,
 		DialContext:           dialer.DialContext,
+		DialTLSContext:        newChainVerifier(roots, dialer).dialTLS(dialer, 10*time.Second),
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          8,
 		MaxIdleConnsPerHost:   2,
 		IdleConnTimeout:       30 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 20 * time.Second,
 		ExpectContinueTimeout: time.Second,
 	}
