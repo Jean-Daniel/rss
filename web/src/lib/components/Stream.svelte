@@ -217,9 +217,10 @@
 	// bar. J and K move to the item after or before it, putting its top at
 	// that line and giving it the keyboard focus.
 	//
-	// Outlined: the current item once keys are used, the item clicked while
-	// it is the current one. Esc and touching the screen end it; each list
-	// starts without.
+	// Once an item is chosen (keys or click), the current item is outlined,
+	// and the outline follows the scroll. Esc and touching the screen end
+	// it. Except on touch screens, the reader's first scroll in a list starts
+	// it too.
 	let list: HTMLElement | undefined = $state();
 	const GAP = 12;
 	const readingTop = () => document.querySelector('.topbar')?.getBoundingClientRect().height ?? 0;
@@ -228,13 +229,12 @@
 		node && items.find((it) => it.id === Number(node.dataset.id));
 	let chosenId = $state<number | null>(null);
 	let chosenAt = 0; // where the page was scrolled when it was chosen
-	let outline = $state<'keys' | 'pointer' | null>(null);
+	let outline = $state(false);
 
-	function setChosen(node: HTMLElement, by: 'keys' | 'pointer') {
+	function setChosen(node: HTMLElement) {
 		chosenId = Number(node.dataset.id);
 		chosenAt = scrollY;
-		// A click while keys are used keeps the keys' outline.
-		if (by === 'keys' || outline === null) outline = by;
+		outline = true;
 	}
 	function currentNode() {
 		const top = readingTop();
@@ -247,16 +247,16 @@
 	function scrollToNode(node: HTMLElement) {
 		window.scrollTo({ top: scrollY + node.getBoundingClientRect().top - readingTop() - GAP });
 		if (!node.dataset.id) return;
-		setChosen(node, 'keys');
+		setChosen(node);
 		// The keyboard focus follows (Enter, Tab, screen readers).
 		node.querySelector<HTMLElement>('article')?.focus({ preventScroll: true });
 	}
-	function choose(target: EventTarget | null, by: 'keys' | 'pointer') {
+	function choose(target: EventTarget | null) {
 		const node = target instanceof Element ? target.closest<HTMLElement>('[data-id]') : null;
-		if (node && list?.contains(node)) setChosen(node, by);
+		if (node && list?.contains(node)) setChosen(node);
 	}
 	function chooseOnClick(node: HTMLElement) {
-		const down = (e: PointerEvent) => e.pointerType !== 'touch' && choose(e.target, 'pointer');
+		const down = (e: PointerEvent) => e.pointerType !== 'touch' && choose(e.target);
 		// Tab into an item. Not the item itself: J and K focus it after
 		// choosing it, and the browser gives it the focus back (closing a
 		// dialog) when it may no longer be the one chosen.
@@ -264,7 +264,7 @@
 			e.target instanceof Element &&
 			!e.target.matches('article') &&
 			e.target.matches(':focus-visible') &&
-			choose(e.target, 'keys');
+			choose(e.target);
 		node.addEventListener('pointerdown', down);
 		node.addEventListener('focusin', focus);
 		return () => {
@@ -298,25 +298,16 @@
 	const updateCurrent = () => {
 		currentId = itemFor(currentNode())?.id ?? null;
 	};
-	const outlinedId = $derived(
-		outline === 'keys'
-			? currentId
-			: outline === 'pointer' && currentId === chosenId
-				? chosenId
-				: null
-	);
+	const outlinedId = $derived(outline ? currentId : null);
 	// While an item is chosen or outlined, the current one follows the
 	// scroll; scrolling away on one's own lets the chosen one go.
 	$effect(() => {
-		if (outline === null && chosenId === null) return;
+		if (!outline && chosenId === null) return;
 		let frame = 0;
 		const follow = () => {
 			cancelAnimationFrame(frame);
 			frame = requestAnimationFrame(() => {
-				if (chosenId !== null && Math.abs(scrollY - chosenAt) > innerHeight / 3) {
-					chosenId = null;
-					if (outline === 'pointer') outline = null;
-				}
+				if (chosenId !== null && Math.abs(scrollY - chosenAt) > innerHeight / 3) chosenId = null;
 				updateCurrent();
 			});
 		};
@@ -327,10 +318,24 @@
 			removeEventListener('scroll', follow);
 		};
 	});
+	// The first scroll of the reader's own (wheel or scroll keys: not the
+	// page's own scrolling) starts the outline, except on touch screens.
+	const scrollKeys = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End']);
+	$effect(() => {
+		if (outline || matchMedia('(pointer: coarse)').matches) return;
+		const start = () => (outline = true);
+		const key = (e: KeyboardEvent) => scrollKeys.has(e.key) && start();
+		addEventListener('wheel', start, { passive: true });
+		addEventListener('keydown', key);
+		return () => {
+			removeEventListener('wheel', start);
+			removeEventListener('keydown', key);
+		};
+	});
 	// Touching the screen ends the outline.
 	$effect(() => {
 		const touched = (e: PointerEvent) => {
-			if (e.pointerType === 'touch') outline = null;
+			if (e.pointerType === 'touch') outline = false;
 		};
 		addEventListener('pointerdown', touched, { passive: true });
 		return () => removeEventListener('pointerdown', touched);
@@ -339,7 +344,7 @@
 	const byKeys =
 		<A extends unknown[]>(act: (...args: A) => void) =>
 		(...args: A) => {
-			outline = 'keys';
+			outline = true;
 			act(...args);
 		};
 
@@ -458,8 +463,8 @@
 				if (missing && options.unreadOnly) void invalidate('app:stream');
 			},
 			letGo() {
-				if (outline === null && chosenId === null) return false;
-				outline = null;
+				if (!outline && chosenId === null) return false;
+				outline = false;
 				chosenId = null;
 				const focused = document.activeElement;
 				if (focused instanceof HTMLElement && list?.contains(focused)) focused.blur();

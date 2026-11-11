@@ -647,6 +647,20 @@ func keyboard(ctx context.Context) {
 	check(waitFor(ctx, `!document.querySelector('.item.current')`, 2*time.Second), "tap: nothing outlined")
 	_, err = chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{Enabled: false})
 	must(err)
+
+	// After a click, the outline follows the scroll, as after J.
+	at5 = eval[[]float64](ctx, `(() => {
+		const text = document.querySelectorAll('.item')[4].querySelector('.content').getBoundingClientRect();
+		return [text.left + 30, Math.max(text.top, 80) + 10];
+	})()`)
+	must(chromedp.Do(ctx, chromedp.MouseClickXY(at5[0], at5[1])))
+	check(waitFor(ctx, current+` === 'Key item 5'`, 2*time.Second), "click: outlined (%q)", eval[string](ctx, current))
+	eval[bool](ctx, `(() => {
+		const next = document.querySelectorAll('.items > [data-id]')[5];
+		window.scrollTo(0, scrollY + next.getBoundingClientRect().top - 12);
+		return true;
+	})()`)
+	check(waitFor(ctx, current+` === 'Key item 6'`, 2*time.Second), "scrolled past the item clicked: the next one is outlined (%q)", eval[string](ctx, current))
 	scrolled := eval[float64](ctx, `scrollY`)
 	press(" ")
 	check(waitFor(ctx, fmt.Sprintf(`scrollY > %f`, scrolled), 2*time.Second), "Space: further down")
@@ -711,7 +725,11 @@ func keyboard(ctx context.Context) {
 	press("2")
 	check(waitFor(ctx, at("/"), 3*time.Second), "2: all items")
 	check(waitFor(ctx, `document.querySelectorAll('.item').length > 0 && !document.querySelector('.item.current')`, 3*time.Second),
-		"another list: nothing outlined until chosen")
+		"another list: nothing outlined at first")
+	_, err = chromedp.Call(ctx, input.DispatchMouseEvent, input.DispatchMouseEventParams{Type: input.DispatchMouseEventTypeMouseWheel, X: 400, Y: 300, DeltaX: 0.01, DeltaY: 200}) // both deltas, and a zero one is left out
+	must(err)
+	check(waitFor(ctx, `document.querySelector('.item.current') !== null`, 3*time.Second), "the first scroll with the wheel: the current item outlined (pointer: %s)",
+		eval[string](ctx, `['fine', 'coarse', 'none'].filter(p => matchMedia('(pointer: ' + p + ')').matches).join() + ' any: ' + ['fine', 'coarse', 'none'].filter(p => matchMedia('(any-pointer: ' + p + ')').matches).join()`))
 	press("3")
 	check(waitFor(ctx, at("/saved"), 3*time.Second), "3: saved items")
 	press("5")
