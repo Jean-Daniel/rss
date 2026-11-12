@@ -243,9 +243,9 @@
 
 	.title {
 		margin: 0;
-		padding: 16px 24px 0;
+		padding: 10px 24px 0;
 		font-family: var(--font-reading);
-		font-size: 23px;
+		font-size: 20px;
 		font-weight: 600;
 		line-height: 1.25;
 		overflow-wrap: anywhere;
@@ -277,7 +277,7 @@
 
 	/* Article text. */
 	.content {
-		padding: 12px 24px 24px;
+		padding: 10px 24px 24px;
 		font-family: var(--font-reading);
 		font-size: 14px;
 		line-height: 1.62;
