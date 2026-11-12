@@ -1,10 +1,9 @@
 <script lang="ts">
 	import type { Feed, Item } from '#lib/api/types.ts';
-	import { innerHeight } from 'svelte/reactivity/window';
 	import { folds, registerFoldable } from '#lib/fold.svelte.ts';
 	import { itemState } from '#lib/item-state.svelte.ts';
 	import { when } from '#lib/time.ts';
-	import { phone } from '#lib/ui.svelte.ts';
+	import { phone, viewport } from '#lib/ui.svelte.ts';
 	import FeedIcon from './FeedIcon.svelte';
 
 	let {
@@ -43,7 +42,9 @@
 	// its text, about half a screen. Items much longer than that can fold;
 	// on phones, those taller than a screen do on their own.
 	let textHeight = $state(0); // all of it, folded or not
-	const screen = $derived(innerHeight.current ?? 800);
+	// Not innerHeight, which changes as a phone's browser bars come and go
+	// while scrolling (see viewport).
+	const screen = $derived(viewport.height);
 	const foldAt = $derived(Math.round(screen * 0.25));
 	const foldable = $derived(textHeight > foldAt + 80);
 	// Once folded on its own, it stays so: an item shrinking as its images
