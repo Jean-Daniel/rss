@@ -18,6 +18,8 @@ export interface ListKeys {
 	page(back: boolean): void;
 	/** O: the current item, in a new tab (marked read). */
 	open(): void;
+	/** Enter: the current item, folded or unfolded. */
+	toggleFold(): void;
 	/** S */
 	toggleSaved(): void;
 	/** V: the current item's site, in a new tab; with markRead, its feed is marked read. */
@@ -108,6 +110,7 @@ const run: Record<Exclude<Command, 'escape'>, Run> = {
 	pageDown: onList((l) => l.page(false)),
 	pageUp: onList((l) => l.page(true)),
 	open: onList((l) => l.open()),
+	fold: onList((l) => l.toggleFold()),
 	save: onList((l) => l.toggleSaved()),
 	visit: onList((l) => l.visitSite(false)),
 	visitAndRead: onList((l) => l.visitSite(true)),

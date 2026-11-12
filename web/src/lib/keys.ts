@@ -8,6 +8,7 @@ export type Command =
 	| 'pageDown'
 	| 'pageUp'
 	| 'open'
+	| 'fold'
 	| 'save'
 	| 'visit'
 	| 'visitAndRead'
@@ -62,6 +63,11 @@ export const SHORTCUTS: { title: string; shortcuts: Shortcut[] }[] = [
 				keys: ['O', '→'],
 				what: 'Open the current item in a new tab (marks it read)',
 				commands: { o: 'open', ArrowRight: 'open' }
+			},
+			{
+				keys: ['Enter'],
+				what: 'Fold or unfold the current item',
+				commands: { Enter: 'fold' }
 			},
 			{ keys: ['S'], what: 'Save or unsave the current item', commands: { s: 'save' } },
 			{
@@ -150,10 +156,13 @@ function typingIn(target: unknown): boolean {
 	);
 }
 
-// Space presses buttons (it does not follow links): left to them there.
-function pressesButton(target: unknown): boolean {
+// Space presses buttons (it does not follow links), Enter both: left to
+// them there.
+function presses(key: string, target: unknown): boolean {
 	const el = target as Element | null;
-	return !!el?.closest?.('button, summary, [role="button"]');
+	if (key === ' ') return !!el?.closest?.('button, summary, [role="button"]');
+	if (key === 'Enter') return !!el?.closest?.('a[href], button, summary, [role="button"]');
+	return false;
 }
 
 /**
@@ -170,7 +179,7 @@ export function commandFor(p: Press): Command | null {
 	if (p.key === 'Escape') return 'escape';
 	if (typingIn(p.target)) return null;
 	const typed = p.key.length === 1 ? p.key.toLowerCase() : p.key;
-	if (typed === ' ' && pressesButton(p.target)) return null;
+	if (presses(typed, p.target)) return null;
 	const digit =
 		/^Digit([0-9])$/.exec(p.code)?.[1] ??
 		(/^Numpad[0-9]$/.test(p.code) && /^[0-9]$/.test(p.key) ? p.key : undefined);

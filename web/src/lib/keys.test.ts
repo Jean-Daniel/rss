@@ -66,6 +66,16 @@ test('Space presses buttons, not links', () => {
 	assert.equal(commandFor(press(' ', { shiftKey: true, target: link })), 'pageUp');
 });
 
+test('Enter presses buttons and follows links', () => {
+	const button = { tagName: 'BUTTON', closest: (s: string) => (s.includes('button') ? {} : null) };
+	const link = { tagName: 'A', closest: (s: string) => (s.includes('a[href]') ? {} : null) };
+	const article = { tagName: 'ARTICLE', closest: () => null };
+	assert.equal(commandFor(press('Enter', { target: button })), null);
+	assert.equal(commandFor(press('Enter', { target: link })), null);
+	assert.equal(commandFor(press('Enter', { target: article })), 'fold');
+	assert.equal(commandFor(press('Enter')), 'fold');
+});
+
 test('digits and symbols on other layouts', () => {
 	assert.equal(commandFor(press('2', { code: 'Digit2' })), 'allItems');
 	assert.equal(commandFor(press('é', { code: 'Digit2' })), 'allItems'); // AZERTY, no Shift
@@ -87,6 +97,7 @@ test('the help lists every command, each key once', () => {
 		'pageDown',
 		'pageUp',
 		'open',
+		'fold',
 		'save',
 		'visit',
 		'visitAndRead',

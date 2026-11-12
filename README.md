@@ -1,20 +1,18 @@
-# Fever v2
+# Xenonium RSS Reader
 
-A rewrite of this personal Fever RSS reader. There is one user. It works on desktop
-and mobile, and read state is stored in PostgreSQL.
+Self-hosted single user RSS reader.
+It works on desktop and mobile, and sync read state across devices.
+
+It was designed to replace Fever that is no longer developed.
 
 - **Server:** Go (`cmd/fever`, `internal/…`). It is a single binary that serves the
   JSON API and the front end, refreshes feeds in the background and applies database
   migrations.
 - **Front end:** SvelteKit 3 (`web/`), built as static files and embedded in the
   binary.
-- **Database:** PostgreSQL. v2 tables live in their own `reader` schema, so they can
+- **Database:** PostgreSQL. Reader tables live in their own `reader` schema, so they can
   sit next to the old `fever_*` tables in the same database.
 
-Status: steps 1 to 6 are done: schema, login, the importer for the old data, the page
-layout, feed refreshing, reading (item lists, mark as read on scroll, saving), the
-phone and installed-app polish, managing feeds, groups and preferences, search,
-Fever's keyboard shortcuts, and a lighter look with a dark mode.
 
 ## Configuration
 
@@ -93,6 +91,12 @@ images and unread count. Saved items are listed newest first.
   the top of the window (below the top bar on phones), after it has been on screen.
   Opening an article also marks it read; an item marked unread by hand stays unread.
   The end of a list leaves a screen of room so the last items can scroll past too.
+- **Folded items:** a long item can be folded to its first half screen, with a
+  "Continue reading" button that tells how long the rest is. On phones, items taller
+  than a screen are folded to start with, so scrolling past one is short (and still
+  marks it read); a tap on the button or on the folded text unfolds it, for the rest
+  of the session. On a computer nothing folds on its own: `Enter` folds or unfolds
+  the current item.
 - **No lost reads:** changes are kept in the browser's storage and sent in batches
   every 2 seconds, and right away when the page is hidden or closed; anything not
   confirmed is sent again later. If the session has ended, the login page opens,
@@ -150,6 +154,7 @@ Settings.
 | `J` / `K` | Next / previous item (the item left behind is read, as when scrolling) |
 | `Space` / `Shift Space` | Next / previous item when it is in view, else a page down / up |
 | `O` or `→` | Open the current item in a new tab (marks it read) |
+| `Enter` | Fold or unfold the current item |
 | `S` | Save or unsave the current item |
 | `V` / `Shift V` | Visit the current item's site / and mark its feed as read |
 | `U` | Show or hide read items |
@@ -167,9 +172,9 @@ Settings.
 The current item is the one chosen last, with `J`, `K`, a click in it or Tab, while
 it is on screen and until you scroll a third of a screen away; otherwise the first
 one at the top of the reading area. `J` and `K` also give it the keyboard focus.
-Once an item is chosen (keys or click), the current item is outlined and the outline
-follows the scroll. `Esc` and touching the screen remove it. Except on touch screens,
-your first scroll in a list (wheel or scroll keys) starts the outline too.
+Once an item is chosen (keys or click), or from your first scroll in a list (finger,
+wheel or scroll keys), the current item is outlined and the outline follows the scroll,
+which shows where each item ends. `Esc` removes it.
 Letters follow the keyboard layout (A is A on AZERTY too) and digits work without
 Shift there, as in Fever. Not carried over: the arrow keys moving between groups,
 feeds and items, `1` and `4` (Hot, Sparks), `B` (blacklist) and `0` (excerpts).
@@ -207,7 +212,8 @@ not have.
 
 On narrow screens the groups and feeds are in a drawer: open it with the menu button,
 close it with a swipe to the left, a tap outside it, or Escape. Tapping the title
-bar goes back to the top of the list.
+bar goes back to the top of the list. Items take the width of the screen, and long
+ones are folded (see Folded items above).
 
 Fever can be installed as an app (it needs HTTPS):
 - **iPhone and iPad (Safari):** Share → Add to Home Screen.

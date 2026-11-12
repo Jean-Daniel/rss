@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, ApiError } from '#lib/api/client.ts';
 	import type { Item, ItemChanges, ItemPage, Subscriptions } from '#lib/api/types.ts';
+	import { folds } from '#lib/fold.svelte.ts';
 	import { clock, onResume } from '#lib/foreground.svelte.ts';
 	import { itemState } from '#lib/item-state.svelte.ts';
 	import { toLogin } from '#lib/navigation.ts';
@@ -218,9 +219,9 @@
 	// that line and giving it the keyboard focus.
 	//
 	// Once an item is chosen (keys or click), the current item is outlined,
-	// and the outline follows the scroll. Esc and touching the screen end
-	// it. Except on touch screens, the reader's first scroll in a list starts
-	// it too.
+	// and the outline follows the scroll: it shows where each item ends,
+	// which helps reading, keys or not. The reader's first scroll in a list
+	// starts it too; Esc ends it.
 	let list: HTMLElement | undefined = $state();
 	const GAP = 12;
 	const readingTop = () => document.querySelector('.topbar')?.getBoundingClientRect().height ?? 0;
@@ -318,27 +319,21 @@
 			removeEventListener('scroll', follow);
 		};
 	});
-	// The first scroll of the reader's own (wheel or scroll keys: not the
-	// page's own scrolling) starts the outline, except on touch screens.
+	// The first scroll of the reader's own (finger, wheel or scroll keys:
+	// not the page's own scrolling) starts the outline.
 	const scrollKeys = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End']);
 	$effect(() => {
-		if (outline || matchMedia('(pointer: coarse)').matches) return;
+		if (outline) return;
 		const start = () => (outline = true);
 		const key = (e: KeyboardEvent) => scrollKeys.has(e.key) && start();
 		addEventListener('wheel', start, { passive: true });
+		addEventListener('touchmove', start, { passive: true });
 		addEventListener('keydown', key);
 		return () => {
 			removeEventListener('wheel', start);
+			removeEventListener('touchmove', start);
 			removeEventListener('keydown', key);
 		};
-	});
-	// Touching the screen ends the outline.
-	$effect(() => {
-		const touched = (e: PointerEvent) => {
-			if (e.pointerType === 'touch') outline = false;
-		};
-		addEventListener('pointerdown', touched, { passive: true });
-		return () => removeEventListener('pointerdown', touched);
 	});
 	// The keys acting on items outline the current one.
 	const byKeys =
@@ -429,6 +424,18 @@
 				if (!item?.url) return;
 				window.open(item.url, '_blank', 'noopener,noreferrer');
 				itemState.markRead(item);
+			}),
+			toggleFold: byKeys(async () => {
+				const node = currentNode();
+				const article = node?.querySelector('article');
+				if (!node || !article?.hasAttribute('data-foldable')) return;
+				const fold = !article.hasAttribute('data-folded');
+				folds.set(Number(node.dataset.id), fold);
+				setChosen(node);
+				if (!fold) return;
+				// Folded while reading on in it: back to its top.
+				await tick();
+				if (node.getBoundingClientRect().top < readingTop()) scrollToNode(node);
 			}),
 			toggleSaved: byKeys(() => {
 				const item = itemFor(currentNode());
@@ -598,6 +605,13 @@
 	.more p,
 	.end p {
 		margin: 0 0 8px;
+	}
+
+	/* Phones: items the width of the screen, out of the page's margins. */
+	@media (max-width: 699px) {
+		.items {
+			margin-inline: -12px;
+		}
 	}
 
 	/* A full screen of room: even the last item can scroll above the top. */

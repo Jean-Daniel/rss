@@ -1,7 +1,10 @@
 <script lang="ts">
 	import type { Feed, Item } from '#lib/api/types.ts';
+	import { innerHeight } from 'svelte/reactivity/window';
+	import { folds } from '#lib/fold.svelte.ts';
 	import { itemState } from '#lib/item-state.svelte.ts';
 	import { when } from '#lib/time.ts';
+	import { phone } from '#lib/ui.svelte.ts';
 	import FeedIcon from './FeedIcon.svelte';
 
 	let {
@@ -35,6 +38,30 @@
 			saving = false;
 		}
 	}
+
+	// Folding (see fold.svelte.ts): a folded item shows the first part of
+	// its text, about half a screen. Items much longer than that can fold;
+	// on phones, those taller than a screen do on their own.
+	let textHeight = $state(0); // all of it, folded or not
+	const screen = $derived(innerHeight.current ?? 800);
+	const foldAt = $derived(Math.round(screen * 0.25));
+	const foldable = $derived(textHeight > foldAt + 80);
+	// Once folded on its own, it stays so: an item shrinking as its images
+	// load, or the phone turning, does not move the page.
+	let longOnPhone = $state(false);
+	$effect(() => {
+		if (phone.current && textHeight > screen * 1.1) longOnPhone = true;
+	});
+	const folded = $derived(foldable && (folds.get(item.id) ?? longOnPhone));
+	const minutes = $derived(
+		Math.max(1, Math.round(item.content.replace(/<[^>]*>/g, ' ').split(/\s+/).length / 230))
+	);
+
+	// A tap on the folded text unfolds it; links in it still work.
+	function unfoldOnClick(e: MouseEvent) {
+		if (!folded || (e.target instanceof Element && e.target.closest('a, button'))) return;
+		folds.set(item.id, false);
+	}
 </script>
 
 <article
@@ -45,6 +72,8 @@
 	aria-labelledby="item-{item.id}"
 	aria-current={current ? 'true' : undefined}
 	tabindex="-1"
+	data-foldable={foldable ? '' : undefined}
+	data-folded={folded ? '' : undefined}
 >
 	<!-- The source: the site, when, who; and the item's buttons. -->
 	<header class="source">
@@ -97,7 +126,21 @@
 		{/if}
 	</h2>
 	<!-- Sanitized on the server (internal/content). -->
-	<div class="content" class:no-images={!showImages}>{@html item.content}</div>
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions (the button below, and Enter) -->
+	<div
+		class="content"
+		class:no-images={!showImages}
+		class:folded
+		style:--fold-at={folded ? `${foldAt}px` : undefined}
+		onclick={unfoldOnClick}
+	>
+		<div class="text" bind:clientHeight={textHeight}>{@html item.content}</div>
+	</div>
+	{#if folded}
+		<div class="unfold">
+			<button onclick={() => folds.set(item.id, false)}>Continue reading · {minutes} min</button>
+		</div>
+	{/if}
 </article>
 
 <style>
@@ -284,6 +327,38 @@
 		overflow-wrap: break-word;
 	}
 
+	/* Folded: its beginning, fading out. */
+	.content.folded {
+		max-height: calc(var(--fold-at) + 10px);
+		padding-bottom: 0;
+		overflow: hidden;
+		mask-image: linear-gradient(to bottom, #000 50%, transparent);
+		cursor: pointer;
+	}
+
+	.unfold {
+		display: flex;
+		justify-content: center;
+		padding: 4px 24px 18px;
+	}
+
+	.unfold button {
+		min-height: 32px;
+		padding: 0 14px;
+		border: 0;
+		border-radius: 16px;
+		background: transparent;
+		box-shadow: inset 0 0 0 1px var(--field-line);
+		color: var(--accent);
+		font-size: 13px;
+		font-weight: 500;
+		cursor: pointer;
+	}
+
+	.unfold button:hover {
+		background: var(--row-hover);
+	}
+
 	.content :global(:first-child) {
 		margin-top: 0;
 	}
@@ -395,7 +470,20 @@
 		color: var(--text-faint);
 	}
 
+	/* Phones: cards the width of the screen (see Stream), so the outline is
+	   drawn inside them. */
 	@media (max-width: 699px) {
+		.item {
+			margin-bottom: 8px;
+			border-radius: 0;
+		}
+
+		.item.current {
+			box-shadow: var(--shadow);
+			outline: 2px solid var(--accent-strong);
+			outline-offset: -2px;
+		}
+
 		.source {
 			padding-left: 14px;
 		}

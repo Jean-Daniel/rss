@@ -648,7 +648,7 @@ func keyboard(ctx context.Context) {
 	press("j")
 	check(waitFor(ctx, current+` === 'Key item 5'`, 3*time.Second), "J: outlined again (%q)", eval[string](ctx, current))
 
-	// A tap neither chooses nor outlines an item, and ends the outline.
+	// A tap does not end the outline: it helps reading on phones too.
 	_, err := chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{Enabled: true, MaxTouchPoints: 5})
 	must(err)
 	tapAt := eval[[]float64](ctx, `(() => {
@@ -656,7 +656,8 @@ func keyboard(ctx context.Context) {
 		return [text.left + 30, Math.max(text.top, 80) + 10];
 	})()`)
 	tap(ctx, tapAt[0], tapAt[1])
-	check(waitFor(ctx, `!document.querySelector('.item.current')`, 2*time.Second), "tap: nothing outlined")
+	time.Sleep(300 * time.Millisecond)
+	check(eval[bool](ctx, `document.querySelector('.item.current') !== null`), "tap: still outlined")
 	_, err = chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{Enabled: false})
 	must(err)
 
@@ -688,6 +689,17 @@ func keyboard(ctx context.Context) {
 	press(kb.ArrowRight)
 	check(waitFor(ctx, fmt.Sprintf(`window.__test.opened.length === %d && window.__test.opened.at(-1) === %q`,
 		tabs+1, site+"k"+strings.TrimPrefix(cur, "Key item ")), 2*time.Second), "→: the current item (%s) opens", cur)
+
+	// Enter folds the current item, and unfolds it. Long items do not fold
+	// on their own on a computer.
+	const curFolded = `document.querySelector('.item.current')?.hasAttribute('data-folded')`
+	check(eval[bool](ctx, `!document.querySelector('.item[data-folded]')`), "computer: no item folded on its own")
+	check(eval[bool](ctx, `document.querySelector('.item.current')?.hasAttribute('data-foldable') ?? false`), "the current item can fold")
+	press(kb.Enter)
+	check(waitFor(ctx, curFolded+` === true`, 2*time.Second), "Enter: the current item folded")
+	check(waitFor(ctx, `document.querySelector('.item.current').getBoundingClientRect().top >= 0`, 2*time.Second), "Enter: its top in view")
+	press(kb.Enter)
+	check(waitFor(ctx, curFolded+` === false`, 2*time.Second), "Enter again: unfolded")
 
 	// U switches between Unread and All (the reading step left All on).
 	const showing = `(localStorage.getItem('fever.showRead') === '1' ? 'All' : 'Unread')`
@@ -759,6 +771,31 @@ func keyboard(ctx context.Context) {
 	eval[bool](ctx, `(document.activeElement?.blur(), true)`)
 	press("N", shift)
 	check(waitFor(ctx, at("/groups/new"), 3*time.Second), "Shift N: add a group")
+
+	// On a phone, long items fold on their own, and items take the width of
+	// the screen.
+	_, err = chromedp.Call(ctx, emulation.SetDeviceMetricsOverride, emulation.SetDeviceMetricsOverrideParams{Width: 390, Height: 844, DeviceScaleFactor: 3, Mobile: true})
+	must(err)
+	navigate(ctx, base+feed)
+	check(waitFor(ctx, `document.querySelector('.item')?.hasAttribute('data-folded') ?? false`, 10*time.Second), "phone: a long item folded")
+	check(eval[bool](ctx, `document.querySelector('.item').getBoundingClientRect().height < innerHeight`), "phone: shorter than the screen once folded")
+	check(eval[bool](ctx, `(() => {
+		const box = document.querySelector('.item').getBoundingClientRect();
+		return box.left === 0 && box.width === innerWidth;
+	})()`), "phone: the item as wide as the screen")
+	unfold := eval[[]float64](ctx, `(() => {
+		const button = document.querySelector('.item .unfold button');
+		button.scrollIntoView({ block: 'center' });
+		const box = button.getBoundingClientRect();
+		return [box.left + box.width / 2, box.top + box.height / 2];
+	})()`)
+	must(chromedp.Do(ctx, chromedp.MouseClickXY(unfold[0], unfold[1])))
+	check(waitFor(ctx, `!document.querySelector('.item').hasAttribute('data-folded')`, 2*time.Second), "phone: Continue reading unfolds it")
+	time.Sleep(300 * time.Millisecond)
+	check(eval[bool](ctx, `!document.querySelector('.item').hasAttribute('data-folded') && document.querySelectorAll('.item')[1].hasAttribute('data-folded')`),
+		"phone: it stays unfolded, the next one is folded")
+	_, err = chromedp.Call(ctx, emulation.ClearDeviceMetricsOverride, cdp.Empty{})
+	must(err)
 
 	// Marking read, and Z.
 	feedUnread := `fetch('/api/subscriptions').then(r => r.json()).then(s => s.feeds.find(f => f.id === ` + fmt.Sprint(id) + `)?.unread)`
