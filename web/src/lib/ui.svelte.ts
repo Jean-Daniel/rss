@@ -14,6 +14,8 @@ function readFeedsVisible(): boolean {
 /** Layout breakpoints; keep in sync with the media queries in the reader layout. */
 export const wide = new MediaQuery('(min-width: 1100px)');
 export const phone = new MediaQuery('(max-width: 699px)');
+/** A touch screen as the main pointer: no keyboard shortcuts offered. */
+export const coarse = new MediaQuery('(pointer: coarse)');
 
 /** Interface state shared by the reader layout's panels. */
 class UI {

@@ -156,3 +156,57 @@ func TestChainVerifierWithoutIssuerURL(t *testing.T) {
 		t.Errorf("leaf only, no issuer URL: err = %v, want unknown authority", err)
 	}
 }
+
+// TestIntermediateCache checks downloads are cached, failures for a few
+// minutes and intermediates for a day.
+func TestIntermediateCache(t *testing.T) {
+	root := newTestCA(t, "Test Root", nil)
+	inter := newTestCA(t, "Test Intermediate", root)
+
+	var downloads atomic.Int32
+	var failing atomic.Bool
+	failing.Store(true)
+	aia := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		downloads.Add(1)
+		if failing.Load() {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
+		w.Write(inter.cert.Raw)
+	}))
+	defer aia.Close()
+
+	leaf := newTestCert(t, &x509.Certificate{
+		Subject:               pkix.Name{CommonName: "example.com"},
+		DNSNames:              []string{"example.com"},
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IssuingCertificateURL: []string{aia.URL + "/inter.cer"},
+	}, inter)
+	roots := x509.NewCertPool()
+	roots.AddCert(root.cert)
+	v := newChainVerifier(roots, &net.Dialer{})
+	now := time.Now()
+	v.now = func() time.Time { return now }
+	verify := func() error {
+		return v.verify(context.Background(), []*x509.Certificate{leaf.cert}, "example.com")
+	}
+	want := func(step string, n int32, ok bool) {
+		t.Helper()
+		err := verify()
+		if (err == nil) != ok {
+			t.Errorf("%s: err = %v, want success %v", step, err, ok)
+		}
+		if got := downloads.Load(); got != n {
+			t.Errorf("%s: %d downloads, want %d", step, got, n)
+		}
+	}
+
+	want("issuer down", 1, false)
+	failing.Store(false)
+	want("failure cached", 1, false)
+	now = now.Add(failedIntermediateTTL + time.Second)
+	want("failure expired", 2, true)
+	want("intermediate cached", 2, true)
+	now = now.Add(intermediateTTL + time.Second)
+	want("intermediate expired", 3, true)
+}

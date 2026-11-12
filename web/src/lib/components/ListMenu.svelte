@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { shortcuts } from '#lib/shortcuts.svelte.ts';
 	import type { StreamData } from '#lib/stream.ts';
-	import { phone, ui, wide } from '#lib/ui.svelte.ts';
+	import { coarse, phone, ui, wide } from '#lib/ui.svelte.ts';
 
 	// The actions of the list shown, in a menu: they used to take a row of
 	// buttons above the list.
@@ -29,7 +29,10 @@
 		!!stream && stream.scope.kind !== 'saved' && stream.scope.kind !== 'search'
 	);
 	const feedsShown = $derived(wide.current ? ui.feedsVisible : ui.feedsOverlay);
-	const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+	const showFeeds = $derived(!phone.current);
+	const showHelp = $derived(!coarse.current);
+	// No button for an empty menu (on a phone, outside a group or feed).
+	const any = $derived(reading || !!edit || showFeeds || showHelp);
 
 	afterNavigate(() => (open = false));
 
@@ -38,7 +41,8 @@
 		act();
 	}
 
-	// Closed by a click elsewhere or Esc (before the reader's own Esc).
+	// Closed by a click elsewhere, Esc (before the reader's own Esc), or
+	// the focus leaving it (onFocusOut).
 	$effect(() => {
 		if (!open) return;
 		const outside = (e: PointerEvent) => {
@@ -59,57 +63,95 @@
 		};
 	});
 
+	$effect(() => {
+		if (!any) open = false;
+	});
+
 	function focusFirst(menu: HTMLElement) {
 		menu.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
 	}
+
+	// Arrow keys, Home and End move between the items, as in any menu.
+	const moves: Record<string, (at: number, n: number) => number> = {
+		ArrowDown: (at, n) => (at + 1) % n,
+		ArrowUp: (at, n) => (at - 1 + n) % n,
+		Home: () => 0,
+		End: (_, n) => n - 1
+	};
+	function onMenuKey(e: KeyboardEvent) {
+		const move = moves[e.key];
+		if (!move) return;
+		const menu = e.currentTarget as HTMLElement;
+		const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+		if (items.length === 0) return;
+		e.preventDefault();
+		e.stopPropagation(); // not the reader's keys, nor the first-scroll outline
+		items[move(items.indexOf(document.activeElement as HTMLElement), items.length)]?.focus();
+	}
+
+	// Tab out of it. Not a click (no related target in Safari, which does
+	// not focus buttons): the click is seen above, and closing here would
+	// lose a click on an item.
+	function onFocusOut(e: FocusEvent) {
+		if (open && e.relatedTarget instanceof Node && !root?.contains(e.relatedTarget)) open = false;
+	}
 </script>
 
-<div class="list-menu" bind:this={root}>
-	<button
-		bind:this={button}
-		class="icon-button"
-		aria-haspopup="menu"
-		aria-expanded={open}
-		aria-label="List actions"
-		title="List actions"
-		onclick={() => (open = !open)}
-	>
-		<svg viewBox="0 0 18 18" aria-hidden="true">
-			<circle cx="4" cy="9" r="1.3" /><circle cx="9" cy="9" r="1.3" /><circle
-				cx="14"
-				cy="9"
-				r="1.3"
-			/>
-		</svg>
-	</button>
-	{#if open}
-		<div class="menu" role="menu" aria-label="List actions" {@attach focusFirst}>
-			{#if reading && stream}
-				<button role="menuitem" onclick={() => run(() => shortcuts.list?.toggleShowRead())}>
-					{stream.options.unreadOnly ? 'Show read items' : 'Hide read items'}
-				</button>
-				{#if unread > 0}
-					<button role="menuitem" onclick={() => run(() => shortcuts.list?.markAllRead(false))}>
-						Mark all as read
+{#if any}
+	<div class="list-menu" bind:this={root} onfocusout={onFocusOut}>
+		<button
+			bind:this={button}
+			class="icon-button"
+			aria-haspopup="menu"
+			aria-expanded={open}
+			aria-label="List actions"
+			title="List actions"
+			onclick={() => (open = !open)}
+		>
+			<svg viewBox="0 0 18 18" aria-hidden="true">
+				<circle cx="4" cy="9" r="1.3" /><circle cx="9" cy="9" r="1.3" /><circle
+					cx="14"
+					cy="9"
+					r="1.3"
+				/>
+			</svg>
+		</button>
+		{#if open}
+			<div
+				class="menu"
+				role="menu"
+				aria-label="List actions"
+				tabindex="-1"
+				{@attach focusFirst}
+				onkeydown={onMenuKey}
+			>
+				{#if reading && stream}
+					<button role="menuitem" onclick={() => run(() => shortcuts.list?.toggleShowRead())}>
+						{stream.options.unreadOnly ? 'Show read items' : 'Hide read items'}
+					</button>
+					{#if unread > 0}
+						<button role="menuitem" onclick={() => run(() => shortcuts.list?.markAllRead(false))}>
+							Mark all as read
+						</button>
+					{/if}
+				{/if}
+				{#if edit}
+					<a role="menuitem" href={edit} onclick={() => (open = false)}>{editLabel}</a>
+				{/if}
+				{#if showFeeds}
+					<button role="menuitem" onclick={() => run(() => ui.toggleFeeds())}>
+						{feedsShown ? 'Hide the feed list' : 'Show the feed list'}
 					</button>
 				{/if}
-			{/if}
-			{#if edit}
-				<a role="menuitem" href={edit} onclick={() => (open = false)}>{editLabel}</a>
-			{/if}
-			{#if !phone.current}
-				<button role="menuitem" onclick={() => run(() => ui.toggleFeeds())}>
-					{feedsShown ? 'Hide the feed list' : 'Show the feed list'}
-				</button>
-			{/if}
-			{#if !touch}
-				<button role="menuitem" onclick={() => run(() => (shortcuts.helpOpen = true))}>
-					Keyboard shortcuts
-				</button>
-			{/if}
-		</div>
-	{/if}
-</div>
+				{#if showHelp}
+					<button role="menuitem" onclick={() => run(() => (shortcuts.helpOpen = true))}>
+						Keyboard shortcuts
+					</button>
+				{/if}
+			</div>
+		{/if}
+	</div>
+{/if}
 
 <style>
 	.list-menu {

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Feed, Item } from '#lib/api/types.ts';
 	import { innerHeight } from 'svelte/reactivity/window';
-	import { folds } from '#lib/fold.svelte.ts';
+	import { folds, registerFoldable } from '#lib/fold.svelte.ts';
 	import { itemState } from '#lib/item-state.svelte.ts';
 	import { when } from '#lib/time.ts';
 	import { phone } from '#lib/ui.svelte.ts';
@@ -53,13 +53,19 @@
 		if (phone.current && textHeight > screen * 1.1) longOnPhone = true;
 	});
 	const folded = $derived(foldable && (folds.get(item.id) ?? longOnPhone));
+	// Enter (see Stream) folds or unfolds the current item.
+	$effect(() => {
+		if (foldable) return registerFoldable(item.id, () => folded);
+	});
 	const minutes = $derived(
 		Math.max(1, Math.round(item.content.replace(/<[^>]*>/g, ' ').split(/\s+/).length / 230))
 	);
 
-	// A tap on the folded text unfolds it; links in it still work.
+	// A tap on the folded text unfolds it; links in it still work, and so
+	// does selecting some of it.
 	function unfoldOnClick(e: MouseEvent) {
 		if (!folded || (e.target instanceof Element && e.target.closest('a, button'))) return;
+		if (!(getSelection()?.isCollapsed ?? true)) return;
 		folds.set(item.id, false);
 	}
 </script>
@@ -72,8 +78,6 @@
 	aria-labelledby="item-{item.id}"
 	aria-current={current ? 'true' : undefined}
 	tabindex="-1"
-	data-foldable={foldable ? '' : undefined}
-	data-folded={folded ? '' : undefined}
 >
 	<!-- The source: the site, when, who; and the item's buttons. -->
 	<header class="source">

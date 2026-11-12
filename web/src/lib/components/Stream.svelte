@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { api, ApiError } from '#lib/api/client.ts';
 	import type { Item, ItemChanges, ItemPage, Subscriptions } from '#lib/api/types.ts';
-	import { folds } from '#lib/fold.svelte.ts';
+	import { toggleFold } from '#lib/fold.svelte.ts';
 	import { clock, onResume } from '#lib/foreground.svelte.ts';
 	import { itemState } from '#lib/item-state.svelte.ts';
 	import { toLogin } from '#lib/navigation.ts';
@@ -221,7 +221,7 @@
 	// Once an item is chosen (keys or click), the current item is outlined,
 	// and the outline follows the scroll: it shows where each item ends,
 	// which helps reading, keys or not. The reader's first scroll in a list
-	// starts it too; Esc ends it.
+	// starts it too; Esc ends it, until keys or a click choose an item.
 	let list: HTMLElement | undefined = $state();
 	const GAP = 12;
 	const readingTop = () => document.querySelector('.topbar')?.getBoundingClientRect().height ?? 0;
@@ -320,11 +320,16 @@
 		};
 	});
 	// The first scroll of the reader's own (finger, wheel or scroll keys:
-	// not the page's own scrolling) starts the outline.
+	// not the page's own scrolling) starts the outline. Once only: after
+	// Esc, scrolling does not bring it back.
 	const scrollKeys = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End']);
+	let firstScroll = true;
 	$effect(() => {
-		if (outline) return;
-		const start = () => (outline = true);
+		if (outline || !firstScroll) return;
+		const start = () => {
+			firstScroll = false;
+			outline = true;
+		};
 		const key = (e: KeyboardEvent) => scrollKeys.has(e.key) && start();
 		addEventListener('wheel', start, { passive: true });
 		addEventListener('touchmove', start, { passive: true });
@@ -427,10 +432,8 @@
 			}),
 			toggleFold: byKeys(async () => {
 				const node = currentNode();
-				const article = node?.querySelector('article');
-				if (!node || !article?.hasAttribute('data-foldable')) return;
-				const fold = !article.hasAttribute('data-folded');
-				folds.set(Number(node.dataset.id), fold);
+				const fold = node ? toggleFold(Number(node.dataset.id)) : null;
+				if (!node || fold === null) return;
 				setChosen(node);
 				if (!fold) return;
 				// Folded while reading on in it: back to its top.
@@ -471,6 +474,7 @@
 			},
 			letGo() {
 				if (!outline && chosenId === null) return false;
+				firstScroll = false;
 				outline = false;
 				chosenId = null;
 				const focused = document.activeElement;

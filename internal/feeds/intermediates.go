@@ -30,6 +30,11 @@ const (
 	maxIntermediateSize    = 64 << 10 // an intermediate is a couple of KB
 	maxCachedIntermediates = 256
 	intermediateTimeout    = 10 * time.Second
+	// A downloaded intermediate is kept a day, a failed download is not
+	// tried again for a few minutes (each try could hold a refresh up to
+	// intermediateTimeout).
+	intermediateTTL       = 24 * time.Hour
+	failedIntermediateTTL = 10 * time.Minute
 )
 
 type chainVerifier struct {
@@ -37,7 +42,14 @@ type chainVerifier struct {
 	client *http.Client   // downloads issuers; uses the same address checks
 
 	mu    sync.Mutex
-	cache map[string]*x509.Certificate // by issuer URL
+	cache map[string]cachedIssuer // by issuer URL
+	now   func() time.Time        // time.Now; set by tests
+}
+
+type cachedIssuer struct {
+	cert    *x509.Certificate // nil: the download failed with err
+	err     error
+	expires time.Time
 }
 
 func newChainVerifier(roots *x509.CertPool, dialer *net.Dialer) *chainVerifier {
@@ -54,7 +66,8 @@ func newChainVerifier(roots *x509.CertPool, dialer *net.Dialer) *chainVerifier {
 			},
 			Timeout: intermediateTimeout,
 		},
-		cache: map[string]*x509.Certificate{},
+		cache: map[string]cachedIssuer{},
+		now:   time.Now,
 	}
 }
 
@@ -113,25 +126,38 @@ func (v *chainVerifier) issuer(ctx context.Context, c *x509.Certificate) (*x509.
 	var lastErr error
 	for _, u := range c.IssuingCertificateURL {
 		v.mu.Lock()
-		cached := v.cache[u]
+		cached, ok := v.cache[u]
 		v.mu.Unlock()
-		if cached != nil {
-			return cached, nil
+		if !ok || !v.now().Before(cached.expires) {
+			cached = v.fetch(ctx, u)
 		}
-		issuer, err := v.download(ctx, u)
-		if err != nil {
-			lastErr = err
-			continue
+		if cached.cert != nil {
+			return cached.cert, nil
 		}
-		v.mu.Lock()
-		if len(v.cache) >= maxCachedIntermediates {
-			clear(v.cache)
-		}
-		v.cache[u] = issuer
-		v.mu.Unlock()
-		return issuer, nil
+		lastErr = cached.err
 	}
 	return nil, lastErr
+}
+
+// fetch downloads an issuer and caches the outcome, success or failure.
+// A download cut short by the caller (ctx done) is not a failure of the URL:
+// it is not cached.
+func (v *chainVerifier) fetch(ctx context.Context, u string) cachedIssuer {
+	cert, err := v.download(ctx, u)
+	entry := cachedIssuer{cert: cert, err: err, expires: v.now().Add(intermediateTTL)}
+	if err != nil {
+		if ctx.Err() != nil {
+			return entry
+		}
+		entry.expires = v.now().Add(failedIntermediateTTL)
+	}
+	v.mu.Lock()
+	if len(v.cache) >= maxCachedIntermediates {
+		clear(v.cache)
+	}
+	v.cache[u] = entry
+	v.mu.Unlock()
+	return entry
 }
 
 func (v *chainVerifier) download(ctx context.Context, rawURL string) (*x509.Certificate, error) {
@@ -183,8 +209,10 @@ func (v *chainVerifier) dialTLS(dialer *net.Dialer, handshakeTimeout time.Durati
 		if err != nil {
 			return nil, err
 		}
-		hctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
-		defer cancel()
+		// The handshake's time limit is a deadline on the connection, so
+		// the time spent downloading intermediates, which have their own
+		// limits, does not count against it.
+		raw.SetDeadline(time.Now().Add(handshakeTimeout))
 		conn := tls.Client(raw, &tls.Config{
 			ServerName: host,
 			NextProtos: []string{"h2", "http/1.1"},
@@ -192,13 +220,18 @@ func (v *chainVerifier) dialTLS(dialer *net.Dialer, handshakeTimeout time.Durati
 			// missing intermediates. It runs on every handshake.
 			InsecureSkipVerify: true,
 			VerifyConnection: func(cs tls.ConnectionState) error {
-				return v.verify(hctx, cs.PeerCertificates, host)
+				vctx, cancel := context.WithTimeout(ctx, maxIntermediateFetches*intermediateTimeout)
+				defer cancel()
+				err := v.verify(vctx, cs.PeerCertificates, host)
+				raw.SetDeadline(time.Now().Add(handshakeTimeout))
+				return err
 			},
 		})
-		if err := conn.HandshakeContext(hctx); err != nil {
+		if err := conn.HandshakeContext(ctx); err != nil {
 			raw.Close()
 			return nil, err
 		}
+		raw.SetDeadline(time.Time{})
 		return conn, nil
 	}
 }

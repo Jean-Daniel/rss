@@ -645,11 +645,15 @@ func keyboard(ctx context.Context) {
 	check(waitFor(ctx, current+` === 'Key item 4'`, 2*time.Second), "scrolled up half a screen: the item at the top is current again (%q)", eval[string](ctx, current))
 	press(kb.Escape)
 	check(waitFor(ctx, `!document.querySelector('.item.current')`, 2*time.Second), "Esc: nothing outlined")
+	_, err := chromedp.Call(ctx, input.DispatchMouseEvent, input.DispatchMouseEventParams{Type: input.DispatchMouseEventTypeMouseWheel, X: 400, Y: 300, DeltaX: 0.01, DeltaY: 1})
+	must(err)
+	time.Sleep(300 * time.Millisecond)
+	check(eval[bool](ctx, `!document.querySelector('.item.current')`), "Esc, then a scroll: still nothing outlined")
 	press("j")
 	check(waitFor(ctx, current+` === 'Key item 5'`, 3*time.Second), "J: outlined again (%q)", eval[string](ctx, current))
 
 	// A tap does not end the outline: it helps reading on phones too.
-	_, err := chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{Enabled: true, MaxTouchPoints: 5})
+	_, err = chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{Enabled: true, MaxTouchPoints: 5})
 	must(err)
 	tapAt := eval[[]float64](ctx, `(() => {
 		const text = document.querySelectorAll('.item')[4].querySelector('.content').getBoundingClientRect();
@@ -692,9 +696,8 @@ func keyboard(ctx context.Context) {
 
 	// Enter folds the current item, and unfolds it. Long items do not fold
 	// on their own on a computer.
-	const curFolded = `document.querySelector('.item.current')?.hasAttribute('data-folded')`
-	check(eval[bool](ctx, `!document.querySelector('.item[data-folded]')`), "computer: no item folded on its own")
-	check(eval[bool](ctx, `document.querySelector('.item.current')?.hasAttribute('data-foldable') ?? false`), "the current item can fold")
+	const curFolded = `!!document.querySelector('.item.current .content.folded')`
+	check(eval[bool](ctx, `!document.querySelector('.content.folded')`), "computer: no item folded on its own")
 	press(kb.Enter)
 	check(waitFor(ctx, curFolded+` === true`, 2*time.Second), "Enter: the current item folded")
 	check(waitFor(ctx, `document.querySelector('.item.current').getBoundingClientRect().top >= 0`, 2*time.Second), "Enter: its top in view")
@@ -708,6 +711,20 @@ func keyboard(ctx context.Context) {
 	check(waitFor(ctx, fmt.Sprintf(`%s !== '' && %s !== %q`, showing, showing, was), 5*time.Second), "U: from %s to the other", was)
 	press("u")
 	check(waitFor(ctx, fmt.Sprintf(`%s === %q`, showing, was), 5*time.Second), "U again: back to %s", was)
+
+	// The list's menu: the arrow keys move between its items, and Tab out
+	// of it closes it.
+	const focusedItem = `(document.activeElement?.getAttribute('role') === 'menuitem' ? document.activeElement.textContent.trim() : '')`
+	eval[bool](ctx, `([...document.querySelectorAll('.list-menu > button')].find(b => b.offsetParent).click(), true)`)
+	check(waitFor(ctx, focusedItem+` !== ''`, 2*time.Second), "menu: its first item focused")
+	first := eval[string](ctx, focusedItem)
+	press(kb.ArrowDown)
+	check(eval[bool](ctx, fmt.Sprintf(`%s !== '' && %s !== %q`, focusedItem, focusedItem, first)), "menu: ↓ to the next item (%q)", eval[string](ctx, focusedItem))
+	press(kb.Home)
+	check(eval[string](ctx, focusedItem) == first, "menu: Home back to the first item")
+	press(kb.End)
+	press(kb.Tab)
+	check(waitFor(ctx, `!document.querySelector('.list-menu [role="menu"]')`, 2*time.Second), "menu: Tab out of it closes it")
 
 	press("?")
 	check(waitFor(ctx, dialog+` && document.querySelector('dialog[open]').textContent.includes('Keyboard shortcuts')`, 2*time.Second), "?: the list of shortcuts")
@@ -777,7 +794,8 @@ func keyboard(ctx context.Context) {
 	_, err = chromedp.Call(ctx, emulation.SetDeviceMetricsOverride, emulation.SetDeviceMetricsOverrideParams{Width: 390, Height: 844, DeviceScaleFactor: 3, Mobile: true})
 	must(err)
 	navigate(ctx, base+feed)
-	check(waitFor(ctx, `document.querySelector('.item')?.hasAttribute('data-folded') ?? false`, 10*time.Second), "phone: a long item folded")
+	const folded = `(n) => !!document.querySelectorAll('.item')[n]?.querySelector('.content.folded')`
+	check(waitFor(ctx, `(`+folded+`)(0)`, 10*time.Second), "phone: a long item folded")
 	check(eval[bool](ctx, `document.querySelector('.item').getBoundingClientRect().height < innerHeight`), "phone: shorter than the screen once folded")
 	check(eval[bool](ctx, `(() => {
 		const box = document.querySelector('.item').getBoundingClientRect();
@@ -790,10 +808,19 @@ func keyboard(ctx context.Context) {
 		return [box.left + box.width / 2, box.top + box.height / 2];
 	})()`)
 	must(chromedp.Do(ctx, chromedp.MouseClickXY(unfold[0], unfold[1])))
-	check(waitFor(ctx, `!document.querySelector('.item').hasAttribute('data-folded')`, 2*time.Second), "phone: Continue reading unfolds it")
+	check(waitFor(ctx, `!(`+folded+`)(0)`, 2*time.Second), "phone: Continue reading unfolds it")
 	time.Sleep(300 * time.Millisecond)
-	check(eval[bool](ctx, `!document.querySelector('.item').hasAttribute('data-folded') && document.querySelectorAll('.item')[1].hasAttribute('data-folded')`),
-		"phone: it stays unfolded, the next one is folded")
+	check(eval[bool](ctx, `!(`+folded+`)(0) && (`+folded+`)(1)`), "phone: it stays unfolded, the next one is folded")
+
+	// A touch phone has no list menu where nothing in it applies.
+	const menuButton = `[...document.querySelectorAll('.list-menu > button')].some(b => b.offsetParent)`
+	_, err = chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{Enabled: true, MaxTouchPoints: 5})
+	must(err)
+	check(waitFor(ctx, menuButton, 3*time.Second), "touch phone, in a feed: the list menu")
+	navigate(ctx, base+"/saved")
+	check(waitFor(ctx, readerShown+` && !`+menuButton, 10*time.Second), "touch phone, saved items: no empty list menu")
+	_, err = chromedp.Call(ctx, emulation.SetTouchEmulationEnabled, emulation.SetTouchEmulationEnabledParams{Enabled: false})
+	must(err)
 	_, err = chromedp.Call(ctx, emulation.ClearDeviceMetricsOverride, cdp.Empty{})
 	must(err)
 
