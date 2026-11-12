@@ -326,8 +326,8 @@
 	.content {
 		padding: 10px 24px 24px;
 		font-family: var(--font-reading);
-		font-size: 14px;
-		line-height: 1.62;
+		font-size: 15px;
+		line-height: 1.55;
 		overflow-wrap: break-word;
 	}
 
